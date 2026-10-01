@@ -11,6 +11,7 @@ import type { MonthDayRow } from "@/lib/types";
 import { monthTotals } from "@/lib/report";
 import { Button, Card, EmptyState } from "@/components/ui";
 import { MonthReportTable } from "@/components/MonthReportTable";
+import { ExportModal } from "@/components/ExportModal";
 
 export default function ReportPage() {
   const params = useParams<{ year: string; month: string }>();
@@ -22,6 +23,7 @@ export default function ReportPage() {
   const router = useRouter();
   const [rows, setRows] = useState<MonthDayRow[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const reload = useCallback(async () => {
     if (!authUser) return;
@@ -93,10 +95,23 @@ export default function ReportPage() {
           </span>
         </div>
         <div className="no-print mt-3 flex flex-wrap gap-2">
-          <Button variant="primary" disabled={!hasData} onClick={() => router.push("/report")}>
+          <Button variant="primary" disabled={!hasData} onClick={() => setExportOpen(true)}>
             <FileDown size={16} aria-hidden="true" /> {dict.report.exportOpen}
           </Button>
         </div>
+        {authUser ? (
+          <ExportModal
+            open={exportOpen}
+            onClose={() => setExportOpen(false)}
+            userId={authUser.id}
+            displayName={authUser.displayName}
+            email={authUser.email}
+            initialYear={year}
+            initialMonth={month}
+            lang={lang}
+            dict={dict}
+          />
+        ) : null}
       </Card>
 
       {!loaded ? (
