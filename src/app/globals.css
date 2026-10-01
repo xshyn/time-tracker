@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Three-tier tokens: primitives here, semantic via --tt-*, components use Tailwind classes */
+:root {
+  color-scheme: light;
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+
+  --tt-primary: 28 74 60;
+  --tt-primary-dark: 18 53 40;
+  --tt-primary-light: 42 115 85;
+  --tt-primary-fg: 255 255 255;
+  --tt-accent: 168 67 23;
+  --tt-accent-dark: 126 50 17;
+  --tt-accent-light: 232 138 78;
+  --tt-accent-fg: 255 255 255;
+  --tt-clay: 245 214 191;
+  --tt-clay-dark: 231 185 143;
+  --tt-pine: 221 232 223;
+  --tt-pine-dark: 185 210 192;
+  --tt-bg: 244 239 228;
+  --tt-fg: 31 41 36;
+  --tt-card: 255 253 248;
+  --tt-muted: 233 226 208;
+  --tt-muted-fg: 95 107 99;
+  --tt-border: 220 210 184;
+  --tt-destructive: 180 35 24;
+  --tt-glass: 255 253 248;
+  --tt-focus: #1c4a3c;
+}
+
+/* Dark mode "Nocturnal pine": warm-charcoal surfaces with a whisper of green,
+   tonal elevation (lighter surfaces, not shadows), one restrained clay accent.
+   Text targets 12–16:1, never harsh 21:1. */
+.dark {
+  color-scheme: dark;
+
+  --tt-primary: 30 92 68;
+  --tt-primary-dark: 38 114 82;
+  --tt-primary-light: 127 191 154;
+  --tt-primary-fg: 255 255 255;
+  --tt-accent: 178 90 40;
+  --tt-accent-dark: 217 154 99;
+  --tt-accent-light: 232 168 120;
+  --tt-accent-fg: 255 255 255;
+  --tt-clay: 58 46 34;
+  --tt-clay-dark: 74 58 43;
+  --tt-pine: 35 47 40;
+  --tt-pine-dark: 62 78 68;
+  --tt-bg: 20 23 21;
+  --tt-fg: 232 228 216;
+  --tt-card: 27 32 29;
+  --tt-muted: 35 43 38;
+  --tt-muted-fg: 142 151 143;
+  --tt-border: 42 51 45;
+  --tt-destructive: 190 72 52;
+  --tt-glass: 27 32 29;
+  --tt-focus: #7fbf9a;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+body {
+  @apply antialiased;
+  color: rgb(var(--tt-fg));
+  background-color: rgb(var(--tt-bg));
+  background-image:
+    radial-gradient(36rem 28rem at 4% -4%, rgba(28, 74, 60, 0.16), transparent 60%),
+    radial-gradient(30rem 24rem at 96% 2%, rgba(194, 82, 30, 0.16), transparent 60%),
+    radial-gradient(44rem 34rem at 50% 112%, rgba(46, 125, 91, 0.14), transparent 62%),
+    radial-gradient(24rem 20rem at 90% 90%, rgba(194, 82, 30, 0.1), transparent 60%);
+  background-attachment: fixed;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.dark body {
+  background-image:
+    radial-gradient(40rem 30rem at 85% -5%, rgba(178, 90, 40, 0.1), transparent 60%),
+    radial-gradient(36rem 28rem at 5% 0%, rgba(127, 191, 154, 0.07), transparent 60%),
+    radial-gradient(48rem 36rem at 50% 115%, rgba(30, 92, 68, 0.16), transparent 62%);
+}
+
+/* Dark elevation is tonal (lighter surfaces), so flatten colored shadows */
+.dark .shadow-card {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 8px 24px -12px rgba(0, 0, 0, 0.6);
+}
+
+.dark .shadow-pop {
+  box-shadow:
+    0 16px 48px -12px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 rgba(232, 228, 216, 0.06);
+}
+
+/* App-like feel when installed (standalone) */
+@media (display-mode: standalone) {
+  body {
+    overscroll-behavior: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  input,
+  textarea,
+  select {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+}
+
+input,
+textarea,
+select {
+  color: rgb(var(--tt-fg));
+  /* Prevent iOS auto-zoom on focus */
+  font-size: 16px;
+}
+@media (min-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 14px;
+  }
+}
+
+/* Frosted surfaces */
+.glass {
+  background: rgb(var(--tt-glass) / 0.78);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid rgb(var(--tt-border) / 0.9);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 8px 24px -12px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.glass-strong {
+  background: rgb(var(--tt-glass) / 0.94);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  backdrop-filter: blur(22px) saturate(1.5);
+  border: 1px solid rgb(var(--tt-border) / 0.95);
+  box-shadow:
+    0 12px 40px -12px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* visible focus for keyboard users */
+:focus-visible {
+  outline: 2px solid var(--tt-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+}
