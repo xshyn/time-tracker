@@ -3,15 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { FileDown, FileSpreadsheet } from "lucide-react";
+import { FileDown } from "lucide-react";
 import { useAuth, useRequireAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n/provider";
 import { listSessions, listTasks } from "@/lib/backend";
 import { daysInMonth, formatMinutes } from "@/lib/dates";
 import { formatJalaliLong } from "@/lib/jalali";
 import type { MonthDayRow } from "@/lib/types";
-import { exportExcel, exportPdf, dayRemoteStatus, monthTotals } from "@/lib/report";
+import { dayRemoteStatus, monthTotals } from "@/lib/report";
 import { Button, Card, EmptyState } from "@/components/ui";
+import { ExportModal } from "@/components/ExportModal";
 
 export default function ReportPage() {
   const params = useParams<{ year: string; month: string }>();
@@ -23,6 +24,7 @@ export default function ReportPage() {
   const router = useRouter();
   const [rows, setRows] = useState<MonthDayRow[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const reload = useCallback(async () => {
     if (!authUser) return;
@@ -94,36 +96,23 @@ export default function ReportPage() {
           </span>
         </div>
         <div className="no-print mt-3 flex flex-wrap gap-2">
-          <Button
-            variant="primary"
-            disabled={!hasData}
-            onClick={() =>
-              authUser &&
-              exportPdf(
-                { displayName: authUser.displayName, email: authUser.email, year, month, lang },
-                rows,
-                dict,
-              )
-            }
-          >
-            <FileDown size={16} aria-hidden="true" /> {dict.report.exportPdf}
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={!hasData}
-            onClick={() =>
-              authUser &&
-              exportExcel(
-                { displayName: authUser.displayName, email: authUser.email, year, month, lang },
-                rows,
-                dict,
-              )
-            }
-          >
-            <FileSpreadsheet size={16} aria-hidden="true" /> {dict.report.exportExcel}
+          <Button variant="primary" disabled={!hasData} onClick={() => setExportOpen(true)}>
+            <FileDown size={16} aria-hidden="true" /> {dict.report.exportOpen}
           </Button>
         </div>
-        <p className="no-print mt-2 text-xs text-muted-foreground">{dict.report.printHint}</p>
+        {authUser ? (
+          <ExportModal
+            open={exportOpen}
+            onClose={() => setExportOpen(false)}
+            userId={authUser.id}
+            displayName={authUser.displayName}
+            email={authUser.email}
+            initialYear={year}
+            initialMonth={month}
+            lang={lang}
+            dict={dict}
+          />
+        ) : null}
       </Card>
 
       {!loaded ? (

@@ -19,7 +19,7 @@ Multi-user PWA for daily check-in / check-out sessions + tasks, with a monthly r
 | 🏠 **Remote flag** | One toggle per day + per-session override — hybrid days just work |
 | ✅ **Tasks** | Per-day list, done/active filters, quick-add from home |
 | 📅 **Calendar** | Gregorian + Jalali views, `🏠` marks remote days |
-| 📊 **Report** | Monthly table with Remote column, remote-days total, Excel + PDF export |
+| 📊 **Report** | Monthly table with Remote column + Export modal: pick any months or the whole year, one Excel (Summary + per-month sheets) or one PDF |
 | 🌍 **Bilingual** | EN / FA with one click, RTL-aware PDF & Excel |
 | 🔌 **Backends** | LocalStorage (zero setup) ↔ Supabase (multi-device) with one-click migration |
 
