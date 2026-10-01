@@ -10,7 +10,7 @@ import { listSessions, listTasks } from "@/lib/backend";
 import { daysInMonth, formatMinutes } from "@/lib/dates";
 import { formatJalaliLong } from "@/lib/jalali";
 import type { MonthDayRow } from "@/lib/types";
-import { exportExcel, exportPdf, monthTotals } from "@/lib/report";
+import { exportExcel, exportPdf, dayRemoteStatus, monthTotals } from "@/lib/report";
 import { Button, Card, EmptyState } from "@/components/ui";
 
 export default function ReportPage() {
@@ -89,6 +89,9 @@ export default function ReportPage() {
           <span>
             {dict.report.daysWorked}: <strong>{totals.daysWorked}</strong>
           </span>
+          <span>
+            🏠 {dict.report.remoteDays}: <strong>{totals.remoteDays}</strong>
+          </span>
         </div>
         <div className="no-print mt-3 flex flex-wrap gap-2">
           <Button
@@ -131,13 +134,14 @@ export default function ReportPage() {
         </Card>
       ) : (
         <Card className="overflow-x-auto p-0 sm:p-0">
-          <table className="w-full min-w-[40rem] border-collapse text-sm">
+          <table className="w-full min-w-[46rem] border-collapse text-sm">
             <thead>
               <tr className="bg-card text-start">
                 <th className="border-b border-border p-2 text-start">{dict.report.date}</th>
                 <th className="border-b border-border p-2 text-start">{dict.report.sessionsCol}</th>
                 <th className="border-b border-border p-2 text-start">{dict.report.hoursCol}</th>
                 <th className="border-b border-border p-2 text-start">{dict.report.tasksCol}</th>
+                <th className="border-b border-border p-2 text-start">🏠 {dict.report.remoteCol}</th>
               </tr>
             </thead>
             <tbody>
@@ -170,6 +174,14 @@ export default function ReportPage() {
                   </td>
                   <td className="whitespace-nowrap p-2">{formatMinutes(r.totalMinutes)}</td>
                   <td className="p-2 whitespace-pre-wrap">{r.tasks.map((t) => t.title).join(lang === "fa" ? "، " : "; ") || "—"}</td>
+                  <td className="whitespace-nowrap p-2">
+                    {(() => {
+                      const st = dayRemoteStatus(r.sessions);
+                      if (st === "remote") return `🏠 ${dict.report.remoteYes}`;
+                      if (st === "hybrid") return `🏠 ${dict.report.remoteHybrid}`;
+                      return dict.report.remoteNo;
+                    })()}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -180,6 +192,7 @@ export default function ReportPage() {
                   {dict.report.daysWorked}: {totals.daysWorked}
                 </td>
                 <td className="p-2">{formatMinutes(totals.totalMinutes)}</td>
+                <td className="p-2">🏠 {totals.remoteDays}</td>
                 <td className="p-2" />
               </tr>
             </tfoot>

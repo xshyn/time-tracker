@@ -11,8 +11,10 @@ import {
   createTask,
   deleteSession,
   deleteTask,
+  getDayRemote,
   listSessions,
   listTasks,
+  setDayRemote,
   updateSession,
   updateTask,
 } from "@/lib/backend";
@@ -47,12 +49,20 @@ export default function DayPage() {
   const [showAddSession, setShowAddSession] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
+  const [dayRemote, setDayRemoteState] = useState(false);
 
   const reload = useCallback(async () => {
     if (!authUser) return;
-    const [s, t] = await Promise.all([listSessions(authUser.id, dateKey, dateKey), listTasks(authUser.id, dateKey, dateKey)]);
+    const [s, t, dr] = await Promise.all([
+      listSessions(authUser.id, dateKey, dateKey),
+      listTasks(authUser.id, dateKey, dateKey),
+      getDayRemote(authUser.id, dateKey).catch(() => null),
+    ]);
     setSessions(s);
     setTasks(t);
+    // Day default: explicit flag wins; otherwise infer from sessions (all remote => remote).
+    if (dr !== null) setDayRemoteState(dr);
+    else setDayRemoteState(s.length > 0 && s.every((x) => x.isRemote));
   }, [authUser, dateKey]);
 
   useEffect(() => {
@@ -84,6 +94,22 @@ export default function DayPage() {
   const total = dayTotalMinutes(sessions);
   const prev = toDateKey(new Date(parseDateKey(dateKey).getTime() - 86400000));
   const next = toDateKey(new Date(parseDateKey(dateKey).getTime() + 86400000));
+  const remoteCount = sessions.filter((s) => s.isRemote).length;
+  const dayStatus = sessions.length === 0 ? (dayRemote ? dict.day.remote : dict.day.onsite) : remoteCount === 0 ? dict.day.onsite : remoteCount === sessions.length ? dict.day.remote : dict.day.hybrid;
+
+  const toggleDayRemote = async () => {
+    if (!authUser) return;
+    const nextVal = !dayRemote;
+    setDayRemoteState(nextVal);
+    try {
+      await setDayRemote(authUser.id, dateKey, nextVal);
+      // Day toggle = bulk-set existing sessions so list + exports stay consistent.
+      await Promise.all(sessions.map((s) => updateSession(s.id, authUser.id, { isRemote: nextVal })));
+      await reload();
+    } catch {
+      /* offline / old schema — keep local toggle */
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -91,10 +117,14 @@ export default function DayPage() {
         <div>
           <h1 className="text-xl font-bold">{formatDateLong(dateKey, lang)}</h1>
           <p className="text-sm text-muted-foreground">
-            {dict.day.total}: <strong>{formatMinutes(total)}</strong>
+            {dict.day.total}: <strong>{formatMinutes(total)}</strong> · <Badge>🏠 {dayStatus}</Badge>
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm font-semibold hover:bg-border">
+            <input type="checkbox" checked={dayRemote} onChange={toggleDayRemote} aria-label={dict.day.remoteDay} />
+            🏠 {dict.day.remoteDay}
+          </label>
           <Link
             href={`/day/${prev}`}
             aria-label={dict.report.prev}
@@ -124,6 +154,7 @@ export default function DayPage() {
             dateKey={dateKey}
             initial={null}
             existing={sessions}
+            defaultRemote={dayRemote}
             onCancel={() => setShowAddSession(false)}
             onSaved={async () => {
               setShowAddSession(false);
@@ -142,6 +173,7 @@ export default function DayPage() {
                     dateKey={dateKey}
                     initial={s}
                     existing={sessions.filter((x) => x.id !== s.id)}
+                    defaultRemote={dayRemote}
                     onCancel={() => setEditingSession(null)}
                     onSaved={async () => {
                       setEditingSession(null);
@@ -152,6 +184,7 @@ export default function DayPage() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span>
                       {formatTime(s.checkInAt, lang)} – {s.checkOutAt ? formatTime(s.checkOutAt, lang) : dict.session.open}
+                      {s.isRemote ? <Badge>🏠 {dict.session.remote}</Badge> : null}
                       {s.note ? <span className="ms-2 text-muted-foreground">· {s.note}</span> : null}
                     </span>
                     <span className="flex items-center gap-2">
@@ -227,12 +260,14 @@ function SessionForm({
   dateKey,
   initial,
   existing,
+  defaultRemote,
   onCancel,
   onSaved,
 }: {
   dateKey: string;
   initial: TimeSession | null;
   existing: TimeSession[];
+  defaultRemote: boolean;
   onCancel: () => void;
   onSaved: () => Promise<void>;
 }) {
@@ -242,6 +277,7 @@ function SessionForm({
   const [checkOut, setCheckOut] = useState(initial?.checkOutAt ? isoToLocalTime(initial.checkOutAt) : "17:00");
   const [openEnded, setOpenEnded] = useState(initial ? !initial.checkOutAt : false);
   const [note, setNote] = useState(initial?.note ?? "");
+  const [isRemote, setIsRemote] = useState(initial ? Boolean(initial.isRemote) : defaultRemote);
   const [warn, setWarn] = useState(false);
   const [rangeError, setRangeError] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -262,9 +298,9 @@ function SessionForm({
       const hit = overlaps({ checkInAt, checkOutAt }, existing);
       setWarn(hit);
       if (initial) {
-        await updateSession(initial.id, user.id, { date: dateKey, checkInAt, checkOutAt, note: note || undefined });
+        await updateSession(initial.id, user.id, { date: dateKey, checkInAt, checkOutAt, note: note || undefined, isRemote });
       } else {
-        await createSession({ userId: user.id, date: dateKey, checkInAt, checkOutAt, note: note || undefined });
+        await createSession({ userId: user.id, date: dateKey, checkInAt, checkOutAt, note: note || undefined, isRemote });
       }
       await onSaved();
     } finally {
@@ -285,6 +321,9 @@ function SessionForm({
       <label className="flex cursor-pointer items-center gap-2 text-sm">
         <input type="checkbox" checked={openEnded} onChange={(e) => setOpenEnded(e.target.checked)} />
         {dict.session.open}
+      </label>
+      <label className="flex cursor-pointer items-center gap-2 text-sm">
+        <input type="checkbox" checked={isRemote} onChange={(e) => setIsRemote(e.target.checked)} />🏠 {dict.session.remote}
       </label>
       <Field label={dict.session.note}>
         <Input value={note} onChange={(e) => setNote(e.target.value)} />

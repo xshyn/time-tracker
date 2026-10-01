@@ -14,8 +14,17 @@ create table if not exists public.time_sessions (
   check_in_at timestamptz not null,
   check_out_at timestamptz,
   note text,
+  is_remote boolean not null default false,
   created_at timestamptz not null default now(),
   check (check_out_at is null or check_out_at > check_in_at)
+);
+
+create table if not exists public.day_flags (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  date date not null,
+  is_remote boolean not null default false,
+  created_at timestamptz not null default now(),
+  primary key (user_id, date)
 );
 
 create table if not exists public.tasks (
@@ -32,13 +41,16 @@ create table if not exists public.tasks (
 -- run these if the tables already exist from an earlier deploy:
 alter table public.tasks add column if not exists is_done boolean not null default false;
 alter table public.tasks add column if not exists completed_at timestamptz;
+alter table public.time_sessions add column if not exists is_remote boolean not null default false;
 
 create index if not exists time_sessions_user_date_idx on public.time_sessions (user_id, date);
 create index if not exists tasks_user_date_idx on public.tasks (user_id, date);
+create index if not exists day_flags_user_date_idx on public.day_flags (user_id, date);
 
 alter table public.profiles enable row level security;
 alter table public.time_sessions enable row level security;
 alter table public.tasks enable row level security;
+alter table public.day_flags enable row level security;
 
 drop policy if exists "profiles_owner" on public.profiles;
 create policy "profiles_owner" on public.profiles
@@ -50,4 +62,8 @@ create policy "sessions_owner" on public.time_sessions
 
 drop policy if exists "tasks_owner" on public.tasks;
 create policy "tasks_owner" on public.tasks
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "day_flags_owner" on public.day_flags;
+create policy "day_flags_owner" on public.day_flags
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

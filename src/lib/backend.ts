@@ -167,11 +167,13 @@ export async function listSessions(userId: string, fromKey?: string, toKey?: str
       checkInAt: String(r.check_in_at),
       checkOutAt: r.check_out_at ? String(r.check_out_at) : null,
       note: (r.note as string | null) ?? undefined,
+      isRemote: Boolean((r as Record<string, unknown>).is_remote ?? false),
     }));
   }
   const all = lsGet<TimeSession[]>("tt_sessions", []).filter((s) => s.userId === userId);
   return all
     .filter((s) => (!fromKey || s.date >= fromKey) && (!toKey || s.date <= toKey))
+    .map((s) => ({ ...s, isRemote: s.isRemote ?? false }))
     .sort((a, b) => a.checkInAt.localeCompare(b.checkInAt));
 }
 
@@ -186,6 +188,7 @@ export async function createSession(input: Omit<TimeSession, "id" | "userId"> & 
         check_in_at: input.checkInAt,
         check_out_at: input.checkOutAt,
         note: input.note ?? null,
+        is_remote: input.isRemote ?? false,
       })
       .select("*")
       .single();
@@ -197,16 +200,17 @@ export async function createSession(input: Omit<TimeSession, "id" | "userId"> & 
       checkInAt: String(data.check_in_at),
       checkOutAt: data.check_out_at ? String(data.check_out_at) : null,
       note: (data.note as string | null) ?? undefined,
+      isRemote: Boolean((data as Record<string, unknown>).is_remote ?? false),
     };
   }
-  const row: TimeSession = { ...input, id: uid("sess") };
+  const row: TimeSession = { ...input, isRemote: input.isRemote ?? false, id: uid("sess") };
   const all = lsGet<TimeSession[]>("tt_sessions", []);
   all.push(row);
   lsSet("tt_sessions", all);
   return row;
 }
 
-export async function updateSession(id: string, userId: string, patch: Partial<Pick<TimeSession, "date" | "checkInAt" | "checkOutAt" | "note">>): Promise<void> {
+export async function updateSession(id: string, userId: string, patch: Partial<Pick<TimeSession, "date" | "checkInAt" | "checkOutAt" | "note" | "isRemote">>): Promise<void> {
   const sb = getSupabase();
   if (sb) {
     // Only send provided fields — a missing key must not overwrite stored data.
@@ -215,6 +219,7 @@ export async function updateSession(id: string, userId: string, patch: Partial<P
     if (patch.checkInAt !== undefined) update.check_in_at = patch.checkInAt;
     if (patch.checkOutAt !== undefined) update.check_out_at = patch.checkOutAt;
     if (patch.note !== undefined) update.note = patch.note;
+    if (patch.isRemote !== undefined) update.is_remote = patch.isRemote;
     const { error } = await sb.from("time_sessions").update(update).eq("id", id).eq("user_id", userId);
     if (error) throw new Error(error.message);
     return;
@@ -238,6 +243,73 @@ export async function deleteSession(id: string, userId: string): Promise<void> {
     "tt_sessions",
     all.filter((s) => !(s.id === id && s.userId === userId)),
   );
+}
+
+// ---------- day remote defaults (one toggle per date) ----------
+
+function localDayRemoteMap(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem("tt_day_remote");
+    if (!raw) return {};
+    return JSON.parse(raw) as Record<string, boolean>;
+  } catch {
+    return {};
+  }
+}
+
+/** Day-level remote default for a single date. Null = never set (treat as onsite). */
+export async function getDayRemote(userId: string, date: string): Promise<boolean | null> {
+  const sb = getSupabase();
+  if (sb) {
+    const { data, error } = await sb.from("day_flags").select("is_remote").eq("user_id", userId).eq("date", date).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+    return Boolean((data as Record<string, unknown>).is_remote);
+  }
+  const map = localDayRemoteMap();
+  return date in map ? Boolean(map[date]) : null;
+}
+
+/** Bulk fetch day remote defaults for a range (calendar/report). Missing dates = not remote. */
+export async function listDayRemotes(userId: string, fromKey?: string, toKey?: string): Promise<Record<string, boolean>> {
+  const sb = getSupabase();
+  if (sb) {
+    let q = sb.from("day_flags").select("date,is_remote").eq("user_id", userId);
+    if (fromKey) q = q.gte("date", fromKey);
+    if (toKey) q = q.lte("date", toKey);
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    const out: Record<string, boolean> = {};
+    for (const r of data ?? []) {
+      const d = String((r as Record<string, unknown>).date);
+      if (!fromKey || d >= fromKey) {
+        if (!toKey || d <= toKey) out[d] = Boolean((r as Record<string, unknown>).is_remote);
+      }
+    }
+    return out;
+  }
+  const map = localDayRemoteMap();
+  const out: Record<string, boolean> = {};
+  for (const [d, v] of Object.entries(map)) {
+    if ((!fromKey || d >= fromKey) && (!toKey || d <= toKey) && v) out[d] = true;
+  }
+  return out;
+}
+
+export async function setDayRemote(userId: string, date: string, isRemote: boolean): Promise<void> {
+  const sb = getSupabase();
+  if (sb) {
+    const { error } = await sb.from("day_flags").upsert({ user_id: userId, date, is_remote: isRemote });
+    if (error) throw new Error(error.message);
+    return;
+  }
+  try {
+    const map = localDayRemoteMap();
+    map[date] = isRemote;
+    localStorage.setItem("tt_day_remote", JSON.stringify(map));
+  } catch {
+    /* ignore */
+  }
 }
 
 // ---------- tasks ----------
@@ -339,7 +411,7 @@ export interface LocalBackup {
   preferredLanguage?: Language;
 }
 
-const LOCAL_DATA_KEYS = ["tt_tasks", "tt_sessions", "tt_users", "tt_session"] as const;
+const LOCAL_DATA_KEYS = ["tt_tasks", "tt_sessions", "tt_users", "tt_session", "tt_day_remote"] as const;
 
 function readKey<T>(key: string, fallback: T): T {
   try {
@@ -412,9 +484,24 @@ export async function migrateLocalToCloud(): Promise<{ tasks: number; sessions: 
         check_in_at: s.checkInAt,
         check_out_at: s.checkOutAt ?? null,
         note: s.note ?? null,
+        is_remote: s.isRemote ?? false,
       })),
     );
     if (error) throw new Error(error.message);
+  }
+
+  // Migrate day remote defaults (best effort — skip if table missing on old deploys).
+  try {
+    const dayMap = localDayRemoteMap();
+    const entries = Object.entries(dayMap);
+    for (const chunk of chunks(entries, 500)) {
+      const { error } = await sb.from("day_flags").upsert(
+        chunk.map(([date, isRemote]) => ({ user_id: user.id, date, is_remote: Boolean(isRemote) })),
+      );
+      if (error) throw new Error(error.message);
+    }
+  } catch {
+    /* old schema without day_flags — sessions already migrated above */
   }
 
   if (backup.displayName || backup.preferredLanguage) {

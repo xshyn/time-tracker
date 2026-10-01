@@ -16,6 +16,8 @@ export interface TimeSession {
   checkInAt: string;
   checkOutAt: string | null;
   note?: string;
+  /** true = remote, false/undefined = onsite (legacy rows default onsite) */
+  isRemote?: boolean;
 }
 
 export interface Task {

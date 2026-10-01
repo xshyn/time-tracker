@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Play, SquarePlus, Square } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n/provider";
-import { createSession, createTask, deleteTask, listSessions, listTasks, updateSession, updateTask } from "@/lib/backend";
+import { createSession, createTask, deleteTask, getDayRemote, listSessions, listTasks, updateSession, updateTask } from "@/lib/backend";
 import { dayTotalMinutes, formatMinutes, formatTime, overlaps, todayKey } from "@/lib/dates";
 import type { Task, TimeSession } from "@/lib/types";
 import { Badge, Button, Card, EmptyState, Input } from "@/components/ui";
@@ -20,6 +20,7 @@ export default function HomePage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [busy, setBusy] = useState(false);
   const [quickTitle, setQuickTitle] = useState("");
+  const [todayRemote, setTodayRemote] = useState(false);
   const dateKey = todayKey();
 
   useEffect(() => {
@@ -27,9 +28,15 @@ export default function HomePage() {
   }, [loading, user, router]);
 
   const reload = async (uid: string) => {
-    const [s, t] = await Promise.all([listSessions(uid, dateKey, dateKey), listTasks(uid, dateKey, dateKey)]);
+    const [s, t, dr] = await Promise.all([
+      listSessions(uid, dateKey, dateKey),
+      listTasks(uid, dateKey, dateKey),
+      getDayRemote(uid, dateKey).catch(() => null),
+    ]);
     setSessions(s);
     setTasks(t);
+    if (dr !== null) setTodayRemote(dr);
+    else setTodayRemote(s.length > 0 && s.every((x) => x.isRemote));
   };
 
   useEffect(() => {
@@ -48,7 +55,7 @@ export default function HomePage() {
       const now = new Date();
       const iso = now.toISOString();
       if (overlaps({ checkInAt: iso, checkOutAt: null }, sessions)) return;
-      await createSession({ userId: user.id, date: dateKey, checkInAt: iso, checkOutAt: null });
+      await createSession({ userId: user.id, date: dateKey, checkInAt: iso, checkOutAt: null, isRemote: todayRemote });
       await reload(user.id);
     } finally {
       setBusy(false);
@@ -153,6 +160,7 @@ export default function HomePage() {
                 <li key={s.id} className="flex items-center justify-between py-2 text-sm">
                   <span>
                     {formatTime(s.checkInAt, lang)} – {s.checkOutAt ? formatTime(s.checkOutAt, lang) : dict.session.open}
+                    {s.isRemote ? <span className="ms-2">🏠</span> : null}
                     {s.note ? <span className="ms-2 text-muted-foreground">· {s.note}</span> : null}
                   </span>
                   <Badge>{formatMinutes(dayTotalMinutes([s]))}</Badge>

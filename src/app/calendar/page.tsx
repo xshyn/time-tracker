@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useRequireAuth, useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n/provider";
-import { listSessions, listTasks } from "@/lib/backend";
+import { listDayRemotes, listSessions, listTasks } from "@/lib/backend";
 import { formatMinutes, todayKey } from "@/lib/dates";
 import {
   JALALI_WEEKDAYS_FA_SHORT,
@@ -31,6 +31,7 @@ export default function CalendarPage() {
   const [jy, setJy] = useState(() => jalaliToday().jy);
   const [jm, setJm] = useState(() => jalaliToday().jm);
   const [minutesByDay, setMinutesByDay] = useState<Record<string, number>>({});
+  const [remoteByDay, setRemoteByDay] = useState<Record<string, boolean>>({} );
 
   // Gregorian range covering the visible month (either calendar).
   const range = useMemo<[string, string]>(() => {
@@ -44,18 +45,25 @@ export default function CalendarPage() {
   useEffect(() => {
     if (!authUser) return;
     void (async () => {
-      const [sessions, tasks] = await Promise.all([listSessions(authUser.id, range[0], range[1]), listTasks(authUser.id, range[0], range[1])]);
+      const [sessions, tasks, flags] = await Promise.all([
+        listSessions(authUser.id, range[0], range[1]),
+        listTasks(authUser.id, range[0], range[1]),
+        listDayRemotes(authUser.id, range[0], range[1]).catch(() => ({} as Record<string, boolean>)),
+      ]);
       const map: Record<string, number> = {};
+      const remote: Record<string, boolean> = { ...flags };
       for (const s of sessions) {
         const mins = s.checkOutAt
           ? Math.max(0, Math.round((new Date(s.checkOutAt).getTime() - new Date(s.checkInAt).getTime()) / 60000))
           : 0;
         map[s.date] = (map[s.date] ?? 0) + mins;
+        if (s.isRemote) remote[s.date] = true;
       }
       for (const t of tasks) {
         if (!(t.date in map)) map[t.date] = 0;
       }
       setMinutesByDay(map);
+      setRemoteByDay(remote);
     })();
   }, [authUser, range]);
 
@@ -153,6 +161,11 @@ export default function CalendarPage() {
                   <span className="mt-0.5 flex items-center gap-1 text-[11px] text-primary-dark">
                     <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
                     {formatMinutes(minutesByDay[cell.key] ?? 0)}
+                    {remoteByDay[cell.key] ? <span aria-hidden="true">🏠</span> : null}
+                  </span>
+                ) : remoteByDay[cell.key] ? (
+                  <span className="mt-0.5 text-[11px]" aria-hidden="true">
+                    🏠
                   </span>
                 ) : null}
               </Link>
