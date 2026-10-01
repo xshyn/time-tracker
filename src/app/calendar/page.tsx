@@ -37,7 +37,10 @@ export default function CalendarPage() {
   const range = useMemo<[string, string]>(() => {
     if (!fa) {
       const p = (n: number) => String(n).padStart(2, "0");
-      return [`${enYear}-${p(enMonth)}-01`, `${enYear}-${p(enMonth)}-31`];
+      // Last day of the month — never hardcode 31: "2026-09-31" is not a
+      // valid Postgres date and makes the Supabase query throw (no dots).
+      const last = new Date(enYear, enMonth, 0).getDate();
+      return [`${enYear}-${p(enMonth)}-01`, `${enYear}-${p(enMonth)}-${p(last)}`];
     }
     return [toGregorianKey(jy, jm, 1), toGregorianKey(jy, jm, jalaaliMonthLength(jy, jm))];
   }, [fa, enYear, enMonth, jy, jm]);
