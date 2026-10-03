@@ -65,29 +65,14 @@ Open http://localhost:3000 → sign up → start logging. No external services r
 
 ---
 
-## 📦 Deploy
-
-<details>
-<summary><b>Netlify</b> (recommended for this repo)</summary>
-
-- Build command: `npm run build` · Publish: `.next` (see `netlify.toml`)
-- Add env vars in **Site settings → Environment variables**:
-  - `NEXT_PUBLIC_SUPABASE_URL`
-  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- Leave both unset for local-only mode — the deployed app still works.
-
-</details>
-
-<details>
-<summary><b>Vercel</b></summary>
+## 📦 Deploy (Vercel)
 
 ```bash
 vercel
 ```
 
-Or connect the repo in the dashboard + add the same two `NEXT_PUBLIC_SUPABASE_*` vars.
-
-</details>
+Or connect the repo in the Vercel dashboard + add the same two `NEXT_PUBLIC_SUPABASE_*`
+env vars if you want cloud sync; otherwise the deployed app works with the local backend.
 
 ---
 

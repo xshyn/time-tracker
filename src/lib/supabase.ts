@@ -24,7 +24,7 @@ export function isSupabaseConfigured(): boolean {
 export function getSupabase(): SupabaseClient | null {
   if (!isSupabaseConfigured()) {
     if (typeof window !== "undefined" && !process.env.NEXT_PUBLIC_SUPABASE_URL) {
-      console.warn("[supabase] NEXT_PUBLIC_SUPABASE_URL is missing — using local-storage backend. Set it in Netlify env vars and redeploy.");
+      console.warn("[supabase] NEXT_PUBLIC_SUPABASE_URL is missing — using local-storage backend. Set it in your hosting env vars and redeploy.");
     }
     return null;
   }
