@@ -1,15 +1,14 @@
 "use client";
 
 import { useAuth } from "@/lib/auth";
-import { useLang } from "@/lib/i18n/provider";
 import { Header } from "./Header";
 import { BottomNav } from "./BottomNav";
 import { Sidebar } from "./Sidebar";
 import { ConnectionBanner } from "./ConnectionBanner";
+import { AppSplashScreen } from "./AppSplashScreen";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  const { dict } = useLang();
 
   // Auth screens: fullscreen, no chrome
   if (!loading && !user) {
@@ -17,11 +16,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (loading && !user) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center">
-        <p className="text-sm text-muted-foreground">{dict.common.loading}</p>
-      </div>
-    );
+    return <AppSplashScreen />;
   }
 
   return (

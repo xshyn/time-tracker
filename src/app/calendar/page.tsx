@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, House } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, House } from "lucide-react";
 import { useRequireAuth, useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n/provider";
-import { listDayRemotes, listSessions, listTasks } from "@/lib/backend";
+import { listDayOffs, listDayRemotes, listSessions, listTasks } from "@/lib/backend";
 import { formatMinutes, todayKey } from "@/lib/dates";
 import {
   JALALI_WEEKDAYS_FA_SHORT,
@@ -16,6 +16,7 @@ import {
   toGregorianKey,
 } from "@/lib/jalali";
 import { Card } from "@/components/ui";
+import type { DayOffType } from "@/lib/types";
 
 const EN_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -32,6 +33,7 @@ export default function CalendarPage() {
   const [jm, setJm] = useState(() => jalaliToday().jm);
   const [minutesByDay, setMinutesByDay] = useState<Record<string, number>>({});
   const [remoteByDay, setRemoteByDay] = useState<Record<string, boolean>>({} );
+  const [offDaysByDay, setOffDaysByDay] = useState<Record<string, DayOffType>>({});
 
   // Gregorian range covering the visible month (either calendar).
   const range = useMemo<[string, string]>(() => {
@@ -48,10 +50,11 @@ export default function CalendarPage() {
   useEffect(() => {
     if (!authUser) return;
     void (async () => {
-      const [sessions, tasks, flags] = await Promise.all([
+      const [sessions, tasks, flags, offDays] = await Promise.all([
         listSessions(authUser.id, range[0], range[1]),
         listTasks(authUser.id, range[0], range[1]),
         listDayRemotes(authUser.id, range[0], range[1]).catch(() => ({} as Record<string, boolean>)),
+        listDayOffs(authUser.id, range[0], range[1]).catch(() => ({} as Record<string, DayOffType>)),
       ]);
       const map: Record<string, number> = {};
       const remote: Record<string, boolean> = { ...flags };
@@ -67,6 +70,7 @@ export default function CalendarPage() {
       }
       setMinutesByDay(map);
       setRemoteByDay(remote);
+      setOffDaysByDay(offDays);
     })();
   }, [authUser, range]);
 
@@ -126,9 +130,9 @@ export default function CalendarPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-bold">{dict.calendar.title}</h1>
-        <div className="glass flex items-center gap-2 rounded-xl p-1">
+        <div className="glass flex w-fit max-w-full items-center gap-2 rounded-xl p-1 sm:w-auto">
           <button className="cursor-pointer rounded-lg p-2 transition-colors hover:bg-pine" onClick={() => shift(-1)} aria-label={dict.report.prev}>
             {dir === "rtl" ? <ChevronRight size={17} aria-hidden="true" /> : <ChevronLeft size={17} aria-hidden="true" />}
           </button>
@@ -139,9 +143,9 @@ export default function CalendarPage() {
         </div>
       </div>
       <Card>
-        <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-muted-foreground" role="row">
+        <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold text-muted-foreground sm:text-xs" role="row">
           {weekDays.map((w) => (
-            <div key={w} className="py-1">
+            <div key={w} className="min-w-0 truncate py-1">
               {w}
             </div>
           ))}
@@ -154,20 +158,35 @@ export default function CalendarPage() {
               <Link
                 key={cell.key}
                 href={`/day/${cell.key}`}
-                aria-label={cell.key}
-                className={`flex min-h-16 flex-col items-center justify-center rounded-xl border p-1 text-sm backdrop-blur-md transition-all duration-150 hover:border-primary-light hover:bg-pine ${
+                aria-label={`${cell.key}${cell.key in minutesByDay ? ` · ${formatMinutes(minutesByDay[cell.key] ?? 0, lang)}` : ""}${remoteByDay[cell.key] ? ` · ${dict.day.remote}` : ""}${offDaysByDay[cell.key] ? ` · ${dict.leave.types[offDaysByDay[cell.key]!]}` : ""}`}
+                className={`flex aspect-square min-w-0 w-full flex-col items-center justify-center overflow-hidden rounded-lg border p-0.5 text-sm backdrop-blur-md transition-all duration-150 hover:border-primary-light hover:bg-pine sm:aspect-auto sm:min-h-16 sm:rounded-xl sm:p-1 ${
                   isToday(cell.key) ? "border-primary-light bg-card font-bold shadow-md shadow-primary/10" : "border-border bg-card/70"
-                } ${cell.key in minutesByDay ? "bg-pine" : ""}`}
+                } ${cell.key in minutesByDay ? "bg-pine" : ""} ${offDaysByDay[cell.key] ? "border-accent/55 ring-1 ring-accent/30" : ""}`}
               >
-                <span>{cell.label}</span>
-                {cell.key in minutesByDay ? (
-                  <span className="mt-0.5 flex items-center gap-1 text-[11px] text-primary-dark">
-                    <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
-                    {formatMinutes(minutesByDay[cell.key] ?? 0, lang)}
-                    {remoteByDay[cell.key] ? <House size={11} className="text-primary-light" aria-hidden="true" /> : null}
-                  </span>
-                ) : remoteByDay[cell.key] ? (
-                  <House size={12} className="mt-0.5 text-primary-light" aria-hidden="true" />
+                <span className="leading-none">{cell.label}</span>
+                {cell.key in minutesByDay || remoteByDay[cell.key] || offDaysByDay[cell.key] ? (
+                  <>
+                    <span className="mt-1 flex h-2 items-center gap-1 sm:hidden" aria-hidden="true">
+                      {cell.key in minutesByDay ? <span className="h-1.5 w-1.5 rounded-full bg-primary" /> : null}
+                      {remoteByDay[cell.key] ? <span className="h-1.5 w-1.5 rounded-full bg-accent" /> : null}
+                      {offDaysByDay[cell.key] ? <span className="h-1.5 w-1.5 rounded-full bg-accent-dark ring-1 ring-accent/50" /> : null}
+                    </span>
+                    <span className="mt-0.5 hidden max-w-full min-w-0 items-center gap-1 overflow-hidden text-[11px] text-primary-dark sm:flex">
+                      {cell.key in minutesByDay ? (
+                        <>
+                          <span aria-hidden="true" className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                          <span className="truncate">{formatMinutes(minutesByDay[cell.key] ?? 0, lang)}</span>
+                        </>
+                      ) : null}
+                      {remoteByDay[cell.key] ? <House size={11} className="shrink-0 text-primary-light" aria-hidden="true" /> : null}
+                      {offDaysByDay[cell.key] ? (
+                        <span className="inline-flex min-w-0 items-center gap-0.5 text-accent-dark dark:text-accent-light" title={dict.leave.types[offDaysByDay[cell.key]!] }>
+                          <CalendarDays size={11} className="shrink-0" aria-hidden="true" />
+                          <span className="truncate">{dict.leave.types[offDaysByDay[cell.key]!]}</span>
+                        </span>
+                      ) : null}
+                    </span>
+                  </>
                 ) : null}
               </Link>
             ),
@@ -176,6 +195,10 @@ export default function CalendarPage() {
         <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
           {dict.calendar.worked} · {formatMinutes(Object.values(minutesByDay).reduce((a, b) => a + b, 0), lang)} {dict.calendar.hours}
+        </p>
+        <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <CalendarDays size={12} className="text-accent-dark dark:text-accent-light" aria-hidden="true" />
+          {dict.leave.title}
         </p>
       </Card>
     </div>

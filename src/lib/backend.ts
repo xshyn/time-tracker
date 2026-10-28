@@ -1,6 +1,6 @@
 import { getSupabase, isSupabaseConfigured } from "./supabase";
 import { uid } from "./dates";
-import type { Language, Task, TimeSession, User } from "./types";
+import type { DayOff, DayOffType, Language, Task, TimeSession, User } from "./types";
 
 // ---------- local (built-in) backend ----------
 
@@ -310,6 +310,68 @@ export async function setDayRemote(userId: string, date: string, isRemote: boole
   } catch {
     /* ignore */
   }
+}
+
+// ---------- day-off records ----------
+
+const DAY_OFF_TYPES: DayOffType[] = [
+  "annual_leave",
+  "sick_leave",
+  "paid_leave",
+  "unpaid_leave",
+  "maternity_leave",
+  "parental_leave",
+  "sabbatical_leave",
+];
+
+function isDayOffType(value: unknown): value is DayOffType {
+  return typeof value === "string" && DAY_OFF_TYPES.includes(value as DayOffType);
+}
+
+/** Returns saved leave types keyed by Gregorian date (YYYY-MM-DD). */
+export async function listDayOffs(userId: string, fromKey?: string, toKey?: string): Promise<Record<string, DayOffType>> {
+  const sb = getSupabase();
+  if (sb) {
+    let q = sb.from("day_offs").select("date,leave_type").eq("user_id", userId);
+    if (fromKey) q = q.gte("date", fromKey);
+    if (toKey) q = q.lte("date", toKey);
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    const out: Record<string, DayOffType> = {};
+    for (const row of data ?? []) {
+      if (isDayOffType(row.leave_type)) out[String(row.date)] = row.leave_type;
+    }
+    return out;
+  }
+
+  const rows = lsGet<DayOff[]>("tt_day_offs", []).filter((item) => item.userId === userId && isDayOffType(item.type));
+  return Object.fromEntries(
+    rows
+      .filter((item) => (!fromKey || item.date >= fromKey) && (!toKey || item.date <= toKey))
+      .map((item) => [item.date, item.type]),
+  );
+}
+
+/** Save a leave type for a date, or remove it when type is null. */
+export async function setDayOff(userId: string, date: string, type: DayOffType | null): Promise<void> {
+  const sb = getSupabase();
+  if (sb) {
+    if (type) {
+      const { error } = await sb.from("day_offs").upsert(
+        { user_id: userId, date, leave_type: type },
+        { onConflict: "user_id,date" },
+      );
+      if (error) throw new Error(error.message);
+    } else {
+      const { error } = await sb.from("day_offs").delete().eq("user_id", userId).eq("date", date);
+      if (error) throw new Error(error.message);
+    }
+    return;
+  }
+
+  const rows = lsGet<DayOff[]>("tt_day_offs", []).filter((item) => item.userId !== userId || item.date !== date);
+  if (type) rows.push({ userId, date, type });
+  lsSet("tt_day_offs", rows);
 }
 
 // ---------- tasks ----------

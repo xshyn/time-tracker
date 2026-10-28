@@ -22,8 +22,10 @@ import {
   deleteSession,
   deleteTask,
   getDayRemote,
+  listDayOffs,
   listSessions,
   listTasks,
+  setDayOff,
   setDayRemote,
   updateSession,
   updateTask,
@@ -38,12 +40,13 @@ import {
   todayKey,
 } from "@/lib/dates";
 import { useNow } from "@/lib/useNow";
-import type { Task, TimeSession } from "@/lib/types";
+import type { DayOffType, Task, TimeSession } from "@/lib/types";
 import { Badge, Button, Card, SectionHeading, Switch } from "@/components/ui";
 import { SessionList } from "@/components/SessionList";
 import { TaskList } from "@/components/TaskList";
 import { SessionForm } from "@/components/forms/SessionForm";
 import { TaskForm } from "@/components/forms/TaskForm";
+import { DayOffManager } from "@/components/DayOffManager";
 
 export default function DayPage() {
   const params = useParams<{ date: string }>();
@@ -61,18 +64,26 @@ export default function DayPage() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [dayRemote, setDayRemoteState] = useState(false);
+  const [dayOff, setDayOffState] = useState<DayOffType | null>(null);
+  const [dayOffSelection, setDayOffSelection] = useState<DayOffType | "">("");
+  const [dayOffBusy, setDayOffBusy] = useState(false);
+  const [dayOffError, setDayOffError] = useState(false);
+  const [dayOffSaved, setDayOffSaved] = useState(false);
 
   const reload = useCallback(async () => {
     if (!authUser) return;
-    const [nextSessions, nextTasks, remoteFlag] = await Promise.all([
+    const [nextSessions, nextTasks, remoteFlag, dayOffs] = await Promise.all([
       listSessions(authUser.id, dateKey, dateKey),
       listTasks(authUser.id, dateKey, dateKey),
       getDayRemote(authUser.id, dateKey).catch(() => null),
+      listDayOffs(authUser.id, dateKey, dateKey).catch(() => ({} as Record<string, DayOffType>)),
     ]);
     setSessions(nextSessions);
     setTasks(nextTasks);
     if (remoteFlag !== null) setDayRemoteState(remoteFlag);
     else setDayRemoteState(nextSessions.length > 0 && nextSessions.every((session) => session.isRemote));
+    setDayOffState(dayOffs[dateKey] ?? null);
+    setDayOffSelection(dayOffs[dateKey] ?? "");
   }, [authUser, dateKey]);
 
   useEffect(() => {
@@ -145,6 +156,23 @@ export default function DayPage() {
       await reload();
     } catch {
       /* offline / old schema — keep the local toggle */
+    }
+  };
+
+  const saveDayOff = async (type: DayOffType | null) => {
+    if (!authUser) return;
+    setDayOffBusy(true);
+    setDayOffError(false);
+    setDayOffSaved(false);
+    try {
+      await setDayOff(authUser.id, dateKey, type);
+      setDayOffState(type);
+      setDayOffSelection(type ?? "");
+      setDayOffSaved(true);
+    } catch {
+      setDayOffError(true);
+    } finally {
+      setDayOffBusy(false);
     }
   };
 
@@ -246,6 +274,22 @@ export default function DayPage() {
           </nav>
         </div>
       </div>
+
+      <DayOffManager
+        value={dayOff}
+        selection={dayOffSelection}
+        busy={dayOffBusy}
+        error={dayOffError}
+        saved={dayOffSaved}
+        dict={dict}
+        onSelectionChange={(value) => {
+          setDayOffSelection(value);
+          setDayOffSaved(false);
+          setDayOffError(false);
+        }}
+        onSave={() => void saveDayOff(dayOffSelection as DayOffType)}
+        onRemove={() => void saveDayOff(null)}
+      />
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <Card>

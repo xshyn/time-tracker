@@ -27,6 +27,22 @@ create table if not exists public.day_flags (
   primary key (user_id, date)
 );
 
+create table if not exists public.day_offs (
+  user_id uuid not null references auth.users (id) on delete cascade,
+  date date not null,
+  leave_type text not null check (leave_type in (
+    'annual_leave',
+    'sick_leave',
+    'paid_leave',
+    'unpaid_leave',
+    'maternity_leave',
+    'parental_leave',
+    'sabbatical_leave'
+  )),
+  created_at timestamptz not null default now(),
+  primary key (user_id, date)
+);
+
 create table if not exists public.tasks (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
@@ -46,11 +62,13 @@ alter table public.time_sessions add column if not exists is_remote boolean not 
 create index if not exists time_sessions_user_date_idx on public.time_sessions (user_id, date);
 create index if not exists tasks_user_date_idx on public.tasks (user_id, date);
 create index if not exists day_flags_user_date_idx on public.day_flags (user_id, date);
+create index if not exists day_offs_user_date_idx on public.day_offs (user_id, date);
 
 alter table public.profiles enable row level security;
 alter table public.time_sessions enable row level security;
 alter table public.tasks enable row level security;
 alter table public.day_flags enable row level security;
+alter table public.day_offs enable row level security;
 
 drop policy if exists "profiles_owner" on public.profiles;
 create policy "profiles_owner" on public.profiles
@@ -66,4 +84,8 @@ create policy "tasks_owner" on public.tasks
 
 drop policy if exists "day_flags_owner" on public.day_flags;
 create policy "day_flags_owner" on public.day_flags
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+drop policy if exists "day_offs_owner" on public.day_offs;
+create policy "day_offs_owner" on public.day_offs
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

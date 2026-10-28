@@ -1,5 +1,20 @@
 export type Language = "en" | "fa";
 
+export type DayOffType =
+  | "annual_leave"
+  | "sick_leave"
+  | "paid_leave"
+  | "unpaid_leave"
+  | "maternity_leave"
+  | "parental_leave"
+  | "sabbatical_leave";
+
+export interface DayOff {
+  userId: string;
+  date: string;
+  type: DayOffType;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -44,4 +59,5 @@ export interface MonthDayRow {
   sessions: TimeSession[];
   tasks: Task[];
   totalMinutes: number;
+  dayOff?: DayOffType;
 }

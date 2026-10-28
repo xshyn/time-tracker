@@ -2,17 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { FileDown, House } from "lucide-react";
+import { FileDown } from "lucide-react";
 import { useAuth, useRequireAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n/provider";
-import { listSessions, listTasks } from "@/lib/backend";
-import { daysInMonth, formatMinutes, formatNumber } from "@/lib/dates";
+import { listDayOffs, listSessions, listTasks } from "@/lib/backend";
+import { daysInMonth } from "@/lib/dates";
 import { formatJalaliMonth, jalaaliMonthLength, toGregorianKey } from "@/lib/jalali";
 import type { MonthDayRow } from "@/lib/types";
 import { monthTotals } from "@/lib/report";
 import { Button, Card, EmptyState } from "@/components/ui";
 import { MonthReportTable } from "@/components/MonthReportTable";
 import { ExportModal } from "@/components/ExportModal";
+import { ReportSummaryCards } from "@/components/ReportSummaryCards";
 
 export default function ReportPage() {
   const params = useParams<{ year: string; month: string }>();
@@ -31,9 +32,10 @@ export default function ReportPage() {
     const keys = lang === "fa"
       ? Array.from({ length: jalaaliMonthLength(year, month) }, (_, i) => toGregorianKey(year, month, i + 1))
       : daysInMonth(year, month);
-    const [sessions, tasks] = await Promise.all([
+    const [sessions, tasks, dayOffs] = await Promise.all([
       listSessions(authUser.id, keys[0], keys[keys.length - 1]),
       listTasks(authUser.id, keys[0], keys[keys.length - 1]),
+      listDayOffs(authUser.id, keys[0], keys[keys.length - 1]),
     ]);
     setRows(
       keys.map((date) => {
@@ -43,7 +45,7 @@ export default function ReportPage() {
           (a, s) => a + (s.checkOutAt ? Math.max(0, Math.round((new Date(s.checkOutAt).getTime() - new Date(s.checkInAt).getTime()) / 60000)) : 0),
           0,
         );
-        return { date, sessions: ds, tasks: dt, totalMinutes };
+        return { date, sessions: ds, tasks: dt, totalMinutes, dayOff: dayOffs[date] };
       }),
     );
     setLoaded(true);
@@ -79,7 +81,7 @@ export default function ReportPage() {
     ? formatJalaliMonth(year, month)
     : new Date(year, month - 1, 1).toLocaleDateString("en-US", { year: "numeric", month: "long" });
 
-  const hasData = rows.some((r) => r.sessions.length > 0 || r.tasks.length > 0);
+  const hasData = rows.some((r) => r.sessions.length > 0 || r.tasks.length > 0 || r.dayOff);
 
   return (
     <div className="space-y-4">
@@ -97,19 +99,16 @@ export default function ReportPage() {
         </div>
       </div>
 
+      <ReportSummaryCards
+        totalMinutes={totals.totalMinutes}
+        daysWorked={totals.daysWorked}
+        remoteDays={totals.remoteDays}
+        offDays={totals.offDays}
+        lang={lang}
+        dict={dict}
+      />
+
       <Card>
-        <div className="flex flex-wrap gap-4 text-sm">
-          <span>
-            {dict.report.totalHours}: <strong>{formatMinutes(totals.totalMinutes, lang)}</strong>
-          </span>
-          <span>
-            {dict.report.daysWorked}: <strong>{formatNumber(totals.daysWorked, lang)}</strong>
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <House size={14} className="text-primary-light" aria-hidden="true" />
-            {dict.report.remoteDays}: <strong>{formatNumber(totals.remoteDays, lang)}</strong>
-          </span>
-        </div>
         <div className="no-print mt-3 flex flex-wrap gap-2">
           <Button variant="primary" disabled={!hasData} onClick={() => setExportOpen(true)}>
             <FileDown size={16} aria-hidden="true" /> {dict.report.exportOpen}

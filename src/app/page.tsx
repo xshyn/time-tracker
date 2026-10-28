@@ -44,6 +44,7 @@ import type { Task, TimeSession } from "@/lib/types";
 import { Badge, Button, Card, Input, ProgressRing, SectionHeading, StatTile } from "@/components/ui";
 import { SessionList } from "@/components/SessionList";
 import { TaskList } from "@/components/TaskList";
+import { SessionForm } from "@/components/forms/SessionForm";
 
 const DAILY_GOAL_MINUTES = 8 * 60;
 
@@ -52,6 +53,7 @@ export default function HomePage() {
   const { dict, lang } = useLang();
   const router = useRouter();
   const [sessions, setSessions] = useState<TimeSession[]>([]);
+  const [editingSession, setEditingSession] = useState<TimeSession | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [busy, setBusy] = useState(false);
   const [quickTitle, setQuickTitle] = useState("");
@@ -349,7 +351,21 @@ export default function HomePage() {
             }
           />
           <div className="mt-3 flex-1">
-            <SessionList sessions={sessions} lang={lang} dict={dict} />
+            {editingSession ? (
+              <SessionForm
+                key={editingSession.id}
+                dateKey={dateKey}
+                initial={editingSession}
+                existing={sessions.filter((session) => session.id !== editingSession.id)}
+                defaultRemote={todayRemote}
+                onCancel={() => setEditingSession(null)}
+                onSaved={async () => {
+                  setEditingSession(null);
+                  await reload(user.id);
+                }}
+              />
+            ) : null}
+            <SessionList sessions={sessions} lang={lang} dict={dict} onEdit={setEditingSession} />
           </div>
         </Card>
 

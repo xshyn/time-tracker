@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { FileDown, FileSpreadsheet, X } from "lucide-react";
-import { listSessions, listTasks } from "@/lib/backend";
+import { listDayOffs, listSessions, listTasks } from "@/lib/backend";
 import { daysInMonth, formatMinutes, formatNumber } from "@/lib/dates";
 import type { MonthDayRow } from "@/lib/types";
 import { calendarMonthLabel, EXPORT_FIELDS, exportManyExcel, exportManyPdf, monthTotals } from "@/lib/report";
@@ -18,6 +18,7 @@ interface MonthInfo {
   rows: MonthDayRow[];
   totalMinutes: number;
   daysWorked: number;
+  offDays: number;
   hasData: boolean;
 }
 
@@ -64,7 +65,6 @@ export function ExportModal({
       const initialJalali = lang === "fa" && initialCalendar === "gregorian" ? toJalaali(initialYear, initialMonth, 15) : null;
       setYear(initialJalali?.jy ?? initialYear);
       setSelected([initialJalali?.jm ?? initialMonth]);
-      setFields(EXPORT_FIELDS);
     }
   }, [open, initialYear, initialMonth, initialCalendar, lang]);
 
@@ -90,9 +90,10 @@ export function ExportModal({
     void (async () => {
       const from = lang === "fa" ? toGregorianKey(year, 1, 1) : `${year}-01-01`;
       const to = lang === "fa" ? toGregorianKey(year, 12, jalaaliMonthLength(year, 12)) : `${year}-12-31`;
-      const [sessions, tasks] = await Promise.all([
+      const [sessions, tasks, dayOffs] = await Promise.all([
         listSessions(userId, from, to),
         listTasks(userId, from, to),
+        listDayOffs(userId, from, to),
       ]);
       const list: MonthInfo[] = [];
       for (let m = 1; m <= 12; m++) {
@@ -107,10 +108,10 @@ export function ExportModal({
               a + (s.checkOutAt ? Math.max(0, Math.round((new Date(s.checkOutAt).getTime() - new Date(s.checkInAt).getTime()) / 60000)) : 0),
             0,
           );
-          return { date, sessions: ds, tasks: dt, totalMinutes };
+          return { date, sessions: ds, tasks: dt, totalMinutes, dayOff: dayOffs[date] };
         });
         const t = monthTotals(rows);
-        list.push({ month: m, rows, totalMinutes: t.totalMinutes, daysWorked: t.daysWorked, hasData: rows.some((r) => r.sessions.length > 0 || r.tasks.length > 0) });
+        list.push({ month: m, rows, totalMinutes: t.totalMinutes, daysWorked: t.daysWorked, offDays: t.offDays, hasData: rows.some((r) => r.sessions.length > 0 || r.tasks.length > 0 || r.dayOff) });
       }
       setInfos(list);
       setLoaded(true);
@@ -118,7 +119,7 @@ export function ExportModal({
   }, [open, userId, year, lang]);
 
   const toggle = (m: number) => setSelected((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
-  const selectAll = () => setSelected(Array.from({ length: 12 }, (_, i) => i + 1));
+  const selectAll = () => setSelected(infos.filter((info) => info.hasData).map((info) => info.month));
 
   const packs = useMemo(
     () =>
@@ -128,7 +129,7 @@ export function ExportModal({
         .map((i) => ({ month: i.month, rows: i.rows })),
     [infos, selected],
   );
-  const exportable = useMemo(() => packs.filter((p) => p.rows.some((r) => r.sessions.length > 0 || r.tasks.length > 0)), [packs]);
+  const exportable = useMemo(() => packs.filter((p) => p.rows.some((r) => r.sessions.length > 0 || r.tasks.length > 0 || r.dayOff)), [packs]);
 
   if (!open || !mounted) return null;
 
@@ -168,7 +169,7 @@ export function ExportModal({
           </div>
 
           <div className="mb-4">
-            <ExportFieldPicker value={fields} onChange={setFields} dict={dict} />
+            <ExportFieldPicker value={fields} onChange={setFields} dict={dict} lang={lang} />
           </div>
 
           <div className="mb-2 flex items-center justify-between">
@@ -198,7 +199,7 @@ export function ExportModal({
                   <span className="min-w-0">
                     <span className="block truncate font-semibold">{calendarMonthLabel(year, info.month, lang)}</span>
                     <span className="block text-xs text-muted-foreground">
-                      {info.hasData ? `${formatMinutes(info.totalMinutes, lang)} · ${formatNumber(info.daysWorked, lang)}` : dict.report.noDataMonth}
+                      {info.hasData ? `${formatMinutes(info.totalMinutes, lang)} · ${formatNumber(info.daysWorked, lang)} · ${formatNumber(info.offDays, lang)} ${dict.report.offDays}` : dict.report.noDataMonth}
                     </span>
                   </span>
                 </label>
@@ -211,7 +212,7 @@ export function ExportModal({
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
               variant="primary"
-              disabled={exportable.length === 0}
+              disabled={exportable.length === 0 || fields.length === 0}
               onClick={() => {
                 exportManyPdf({ displayName, email, year, lang, calendar: lang === "fa" ? "jalali" : "gregorian" }, packs, dict, fields);
                 onClose();
@@ -221,7 +222,7 @@ export function ExportModal({
             </Button>
             <Button
               variant="secondary"
-              disabled={exportable.length === 0}
+              disabled={exportable.length === 0 || fields.length === 0}
               onClick={() => {
                 exportManyExcel({ displayName, email, year, lang, calendar: lang === "fa" ? "jalali" : "gregorian" }, packs, dict, fields);
                 onClose();
