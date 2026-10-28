@@ -3,12 +3,22 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  ArrowRight,
+  Building2,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  House,
+  ListChecks,
+  Plus,
+  Repeat2,
+  Timer,
+} from "lucide-react";
 import { useAuth, useRequireAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n/provider";
 import {
-  createSession,
-  createTask,
   deleteSession,
   deleteTask,
   getDayRemote,
@@ -18,22 +28,22 @@ import {
   updateSession,
   updateTask,
 } from "@/lib/backend";
-import { dayTotalMinutes, formatDateLong, formatMinutes, formatTime, overlaps, parseDateKey, toDateKey } from "@/lib/dates";
+import {
+  dayTotalMinutesAt,
+  formatDateLong,
+  formatMinutes,
+  formatNumber,
+  parseDateKey,
+  toDateKey,
+  todayKey,
+} from "@/lib/dates";
+import { useNow } from "@/lib/useNow";
 import type { Task, TimeSession } from "@/lib/types";
-import { Badge, Button, Card, EmptyState, Field, Input, TextArea } from "@/components/ui";
+import { Badge, Button, Card, SectionHeading, Switch } from "@/components/ui";
+import { SessionList } from "@/components/SessionList";
 import { TaskList } from "@/components/TaskList";
-
-function localTimeToIso(dateKey: string, hhmm: string): string {
-  const [h, m] = hhmm.split(":").map(Number);
-  const d = parseDateKey(dateKey);
-  d.setHours(h ?? 0, m ?? 0, 0, 0);
-  return d.toISOString();
-}
-
-function isoToLocalTime(iso: string): string {
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
+import { SessionForm } from "@/components/forms/SessionForm";
+import { TaskForm } from "@/components/forms/TaskForm";
 
 export default function DayPage() {
   const params = useParams<{ date: string }>();
@@ -42,6 +52,7 @@ export default function DayPage() {
   const { user: authUser } = useAuth();
   const { dict, lang, dir } = useLang();
   const router = useRouter();
+  const now = useNow();
 
   const [sessions, setSessions] = useState<TimeSession[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -53,343 +64,268 @@ export default function DayPage() {
 
   const reload = useCallback(async () => {
     if (!authUser) return;
-    const [s, t, dr] = await Promise.all([
+    const [nextSessions, nextTasks, remoteFlag] = await Promise.all([
       listSessions(authUser.id, dateKey, dateKey),
       listTasks(authUser.id, dateKey, dateKey),
       getDayRemote(authUser.id, dateKey).catch(() => null),
     ]);
-    setSessions(s);
-    setTasks(t);
-    // Day default: explicit flag wins; otherwise infer from sessions (all remote => remote).
-    if (dr !== null) setDayRemoteState(dr);
-    else setDayRemoteState(s.length > 0 && s.every((x) => x.isRemote));
+    setSessions(nextSessions);
+    setTasks(nextTasks);
+    if (remoteFlag !== null) setDayRemoteState(remoteFlag);
+    else setDayRemoteState(nextSessions.length > 0 && nextSessions.every((session) => session.isRemote));
   }, [authUser, dateKey]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
 
-  if (loading || !user) return <p className="py-10 text-center text-sm text-muted-foreground">{dict.common.loading}</p>;
+  if (loading || !user) {
+    return (
+      <div className="flex min-h-[45vh] flex-col items-center justify-center gap-3">
+        <span className="flex h-12 w-12 animate-pulse items-center justify-center rounded-2xl bg-primary/10 text-primary-light">
+          <CalendarDays size={22} aria-hidden="true" />
+        </span>
+        <p className="text-sm text-muted-foreground">{dict.common.loading}</p>
+      </div>
+    );
+  }
 
-  const toggleTask = async (t: Task) => {
+  const toggleTask = async (task: Task) => {
     if (!authUser) return;
-    const isDone = !t.isDone;
-    setTasks((prev) => prev.map((x) => (x.id === t.id ? { ...x, isDone } : x)));
-    await updateTask(t.id, authUser.id, { isDone, completedAt: isDone ? new Date().toISOString() : null });
+    const isDone = !task.isDone;
+    setTasks((prev) => prev.map((item) => (item.id === task.id ? { ...item, isDone } : item)));
+    await updateTask(task.id, authUser.id, {
+      isDone,
+      completedAt: isDone ? new Date().toISOString() : null,
+    });
     await reload();
   };
 
-  const removeTask = async (t: Task) => {
+  const removeTask = async (task: Task) => {
     if (!authUser || !confirm(dict.common.confirmDelete)) return;
-    await deleteTask(t.id, authUser.id);
+    await deleteTask(task.id, authUser.id);
+    await reload();
+  };
+
+  const removeSession = async (session: TimeSession) => {
+    if (!authUser || !confirm(dict.common.confirmDelete)) return;
+    await deleteSession(session.id, authUser.id);
     await reload();
   };
 
   const clearCompleted = async () => {
     if (!authUser) return;
-    await Promise.all(tasks.filter((t) => t.isDone).map((t) => deleteTask(t.id, authUser.id)));
+    await Promise.all(tasks.filter((task) => task.isDone).map((task) => deleteTask(task.id, authUser.id)));
     await reload();
   };
 
-  const total = dayTotalMinutes(sessions);
-  const prev = toDateKey(new Date(parseDateKey(dateKey).getTime() - 86400000));
-  const next = toDateKey(new Date(parseDateKey(dateKey).getTime() + 86400000));
-  const remoteCount = sessions.filter((s) => s.isRemote).length;
-  const dayStatus = sessions.length === 0 ? (dayRemote ? dict.day.remote : dict.day.onsite) : remoteCount === 0 ? dict.day.onsite : remoteCount === sessions.length ? dict.day.remote : dict.day.hybrid;
+  const total = dayTotalMinutesAt(sessions, now ?? 0);
+  const prev = toDateKey(new Date(parseDateKey(dateKey).getTime() - 86_400_000));
+  const next = toDateKey(new Date(parseDateKey(dateKey).getTime() + 86_400_000));
+  const remoteCount = sessions.filter((session) => session.isRemote).length;
+  const doneCount = tasks.filter((task) => task.isDone).length;
+  const dayStatus =
+    sessions.length === 0
+      ? dayRemote
+        ? dict.day.remote
+        : dict.day.onsite
+      : remoteCount === 0
+        ? dict.day.onsite
+        : remoteCount === sessions.length
+          ? dict.day.remote
+          : dict.day.hybrid;
 
   const toggleDayRemote = async () => {
     if (!authUser) return;
-    const nextVal = !dayRemote;
-    setDayRemoteState(nextVal);
+    const nextValue = !dayRemote;
+    setDayRemoteState(nextValue);
     try {
-      await setDayRemote(authUser.id, dateKey, nextVal);
-      // Day toggle = bulk-set existing sessions so list + exports stay consistent.
-      await Promise.all(sessions.map((s) => updateSession(s.id, authUser.id, { isRemote: nextVal })));
+      await setDayRemote(authUser.id, dateKey, nextValue);
+      await Promise.all(sessions.map((session) => updateSession(session.id, authUser.id, { isRemote: nextValue })));
       await reload();
     } catch {
-      /* offline / old schema — keep local toggle */
+      /* offline / old schema — keep the local toggle */
     }
   };
 
+  const closeForms = () => {
+    setShowAddSession(false);
+    setEditingSession(null);
+  };
+
+  const openAddSession = () => {
+    setEditingSession(null);
+    setShowAddSession((value) => !value);
+  };
+
+  const openEditSession = (session: TimeSession) => {
+    setShowAddSession(false);
+    setEditingSession(session);
+  };
+
+  const closeTaskForms = () => {
+    setShowAddTask(false);
+    setEditingTask(null);
+  };
+
+  const openAddTask = () => {
+    setEditingTask(null);
+    setShowAddTask((value) => !value);
+  };
+
+  const openEditTask = (task: Task) => {
+    setShowAddTask(false);
+    setEditingTask(task);
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold">{formatDateLong(dateKey, lang)}</h1>
-          <p className="text-sm text-muted-foreground">
-            {dict.day.total}: <strong>{formatMinutes(total)}</strong> · <Badge>🏠 {dayStatus}</Badge>
-          </p>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <Link
+            href="/calendar"
+            className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <CalendarDays size={12} className="text-primary-light" aria-hidden="true" />
+            {dict.nav.calendar}
+          </Link>
+          <h1 className="mt-1.5 text-2xl font-extrabold tracking-tight sm:text-3xl">{formatDateLong(dateKey, lang)}</h1>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Badge tone="primary">
+              <Timer size={12} aria-hidden="true" />
+              {dict.day.total}: <span className="tabular-nums">{formatMinutes(total, lang)}</span>
+            </Badge>
+            <Badge tone="neutral">
+              <Repeat2 size={12} aria-hidden="true" />
+              {dict.session.count.replace("{n}", formatNumber(sessions.length, lang))}
+            </Badge>
+            <Badge tone={dayRemote ? "accent" : "outline"}>
+              {dayRemote ? <House size={12} aria-hidden="true" /> : <Building2 size={12} aria-hidden="true" />}
+              {dayStatus}
+            </Badge>
+            {tasks.length > 0 ? (
+              <Badge tone="neutral">
+                <ListChecks size={12} aria-hidden="true" />
+                {formatNumber(doneCount, lang)}/{formatNumber(tasks.length, lang)}
+              </Badge>
+            ) : null}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="flex cursor-pointer items-center gap-2 rounded-lg bg-muted px-3 py-2 text-sm font-semibold hover:bg-border">
-            <input type="checkbox" checked={dayRemote} onChange={toggleDayRemote} aria-label={dict.day.remoteDay} />
-            🏠 {dict.day.remoteDay}
-          </label>
-          <Link
-            href={`/day/${prev}`}
-            aria-label={dict.report.prev}
-            className="rounded-lg bg-muted p-2 text-foreground transition-colors hover:bg-border"
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Switch
+            checked={dayRemote}
+            onCheckedChange={toggleDayRemote}
+            label={dict.day.remoteDay}
+            icon={dayRemote ? House : Building2}
+          />
+          <nav
+            aria-label={dict.calendar.title}
+            className="flex items-center gap-1 rounded-xl border border-border bg-card/80 p-1 shadow-sm"
           >
-            {dir === "rtl" ? <ChevronRight size={17} aria-hidden="true" /> : <ChevronLeft size={17} aria-hidden="true" />}
-          </Link>
-          <Link
-            href={`/day/${next}`}
-            aria-label={dict.report.next}
-            className="rounded-lg bg-muted p-2 text-foreground transition-colors hover:bg-border"
-          >
-            {dir === "rtl" ? <ChevronLeft size={17} aria-hidden="true" /> : <ChevronRight size={17} aria-hidden="true" />}
-          </Link>
+            <Link
+              href={`/day/${prev}`}
+              aria-label={dict.report.prev}
+              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-pine hover:text-foreground"
+            >
+              {dir === "rtl" ? <ChevronRight size={16} aria-hidden="true" /> : <ChevronLeft size={16} aria-hidden="true" />}
+            </Link>
+            <Link
+              href={`/day/${todayKey()}`}
+              className="rounded-lg px-2 py-1.5 text-xs font-bold text-muted-foreground transition-colors hover:bg-pine hover:text-foreground"
+            >
+              {dict.home.today}
+            </Link>
+            <Link
+              href={`/day/${next}`}
+              aria-label={dict.report.next}
+              className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-pine hover:text-foreground"
+            >
+              {dir === "rtl" ? <ChevronLeft size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+            </Link>
+          </nav>
         </div>
       </div>
 
-      <Card>
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="font-semibold">{dict.day.sessions}</h2>
-          <Button variant="secondary" onClick={() => setShowAddSession((v) => !v)}>
-            {dict.session.add}
-          </Button>
-        </div>
-        {showAddSession ? (
-          <SessionForm
-            dateKey={dateKey}
-            initial={null}
-            existing={sessions}
-            defaultRemote={dayRemote}
-            onCancel={() => setShowAddSession(false)}
-            onSaved={async () => {
-              setShowAddSession(false);
-              await reload();
-            }}
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <Card>
+          <SectionHeading
+            icon={Clock3}
+            title={dict.day.sessions}
+            action={
+              <Button variant="secondary" size="sm" onClick={openAddSession}>
+                <Plus size={14} aria-hidden="true" />
+                {dict.session.add}
+              </Button>
+            }
           />
-        ) : null}
-        {sessions.length === 0 ? (
-          <EmptyState message={dict.home.noSessions} />
-        ) : (
-          <ul className="divide-y divide-border">
-            {sessions.map((s) => (
-              <li key={s.id} className="py-2 text-sm">
-                {editingSession?.id === s.id ? (
-                  <SessionForm
-                    dateKey={dateKey}
-                    initial={s}
-                    existing={sessions.filter((x) => x.id !== s.id)}
-                    defaultRemote={dayRemote}
-                    onCancel={() => setEditingSession(null)}
-                    onSaved={async () => {
-                      setEditingSession(null);
-                      await reload();
-                    }}
-                  />
-                ) : (
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span>
-                      {formatTime(s.checkInAt, lang)} – {s.checkOutAt ? formatTime(s.checkOutAt, lang) : dict.session.open}
-                      {s.isRemote ? <Badge>🏠 {dict.session.remote}</Badge> : null}
-                      {s.note ? <span className="ms-2 text-muted-foreground">· {s.note}</span> : null}
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <Badge>{formatMinutes(dayTotalMinutes([s]))}</Badge>
-                      <button className="cursor-pointer text-primary-light hover:underline" onClick={() => setEditingSession(s)}>
-                        {dict.session.edit}
-                      </button>
-                      <button
-                        className="cursor-pointer text-destructive hover:underline"
-                        onClick={async () => {
-                          if (!authUser || !confirm(dict.common.confirmDelete)) return;
-                          await deleteSession(s.id, authUser.id);
-                          await reload();
-                        }}
-                      >
-                        {dict.session.del}
-                      </button>
-                    </span>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
+          <div className="mt-4">
+            {showAddSession || editingSession ? (
+              <SessionForm
+                dateKey={dateKey}
+                initial={editingSession}
+                existing={sessions.filter((session) => session.id !== editingSession?.id)}
+                defaultRemote={dayRemote}
+                onCancel={closeForms}
+                onSaved={async () => {
+                  closeForms();
+                  await reload();
+                }}
+              />
+            ) : null}
+            <SessionList
+              sessions={sessions}
+              lang={lang}
+              dict={dict}
+              onEdit={openEditSession}
+              onDelete={removeSession}
+            />
+          </div>
+        </Card>
 
-      <Card>
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="font-semibold">{dict.day.tasks}</h2>
-          <Button variant="secondary" onClick={() => setShowAddTask((v) => !v)}>
-            {dict.task.add}
-          </Button>
-        </div>
-        {showAddTask ? (
-          <TaskForm
-            initial={null}
-            onCancel={() => setShowAddTask(false)}
-            onSaved={async () => {
-              setShowAddTask(false);
-              await reload();
-            }}
+        <Card>
+          <SectionHeading
+            icon={ListChecks}
+            title={dict.day.tasks}
+            action={
+              <Button variant="secondary" size="sm" onClick={openAddTask}>
+                <Plus size={14} aria-hidden="true" />
+                {dict.task.add}
+              </Button>
+            }
           />
-        ) : null}
-        {editingTask ? (
-          <TaskForm
-            initial={editingTask}
-            onCancel={() => setEditingTask(null)}
-            onSaved={async () => {
-              setEditingTask(null);
-              await reload();
-            }}
-          />
-        ) : null}
-        <TaskList
-          tasks={tasks}
-          dict={dict}
-          onToggle={toggleTask}
-          onDelete={removeTask}
-          onEdit={setEditingTask}
-          onClearCompleted={clearCompleted}
-        />
-      </Card>
+          <div className="mt-4">
+            {showAddTask || editingTask ? (
+              <TaskForm
+                dateKey={dateKey}
+                initial={editingTask}
+                onCancel={closeTaskForms}
+                onSaved={async () => {
+                  closeTaskForms();
+                  await reload();
+                }}
+              />
+            ) : null}
+            <TaskList
+              tasks={tasks}
+              dict={dict}
+              lang={lang}
+              onToggle={toggleTask}
+              onDelete={removeTask}
+              onEdit={openEditTask}
+              onClearCompleted={clearCompleted}
+            />
+          </div>
+        </Card>
+      </div>
 
-      <button className="inline-flex cursor-pointer items-center gap-1 text-sm font-medium text-primary-light hover:underline" onClick={() => router.push("/calendar")}>
+      <Link
+        href="/calendar"
+        className="inline-flex items-center gap-1.5 text-sm font-bold text-primary-light transition-colors hover:text-primary-dark"
+      >
         {dict.calendar.title}
-        <ArrowRight size={15} aria-hidden="true" className="rtl:rotate-180" />
-      </button>
+        <ArrowRight size={15} className="rtl:rotate-180" aria-hidden="true" />
+      </Link>
     </div>
-  );
-}
-
-function SessionForm({
-  dateKey,
-  initial,
-  existing,
-  defaultRemote,
-  onCancel,
-  onSaved,
-}: {
-  dateKey: string;
-  initial: TimeSession | null;
-  existing: TimeSession[];
-  defaultRemote: boolean;
-  onCancel: () => void;
-  onSaved: () => Promise<void>;
-}) {
-  const { user } = useAuth();
-  const { dict } = useLang();
-  const [checkIn, setCheckIn] = useState(initial ? isoToLocalTime(initial.checkInAt) : "09:00");
-  const [checkOut, setCheckOut] = useState(initial?.checkOutAt ? isoToLocalTime(initial.checkOutAt) : "17:00");
-  const [openEnded, setOpenEnded] = useState(initial ? !initial.checkOutAt : false);
-  const [note, setNote] = useState(initial?.note ?? "");
-  const [isRemote, setIsRemote] = useState(initial ? Boolean(initial.isRemote) : defaultRemote);
-  const [warn, setWarn] = useState(false);
-  const [rangeError, setRangeError] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user) return;
-    setBusy(true);
-    try {
-      const checkInAt = localTimeToIso(dateKey, checkIn);
-      const checkOutAt = openEnded ? null : localTimeToIso(dateKey, checkOut);
-      if (checkOutAt && checkOutAt <= checkInAt) {
-        setRangeError(true);
-        setWarn(false);
-        return;
-      }
-      setRangeError(false);
-      const hit = overlaps({ checkInAt, checkOutAt }, existing);
-      setWarn(hit);
-      if (initial) {
-        await updateSession(initial.id, user.id, { date: dateKey, checkInAt, checkOutAt, note: note || undefined, isRemote });
-      } else {
-        await createSession({ userId: user.id, date: dateKey, checkInAt, checkOutAt, note: note || undefined, isRemote });
-      }
-      await onSaved();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form onSubmit={save} className="mb-3 space-y-2 rounded-xl border border-border bg-card p-3 backdrop-blur-md">
-      <div className="grid grid-cols-2 gap-2">
-        <Field label={dict.session.checkIn}>
-          <Input type="time" required value={checkIn} onChange={(e) => setCheckIn(e.target.value)} />
-        </Field>
-        <Field label={dict.session.checkOut}>
-          <Input type="time" required={!openEnded} disabled={openEnded} value={checkOut} onChange={(e) => setCheckOut(e.target.value)} />
-        </Field>
-      </div>
-      <label className="flex cursor-pointer items-center gap-2 text-sm">
-        <input type="checkbox" checked={openEnded} onChange={(e) => setOpenEnded(e.target.checked)} />
-        {dict.session.open}
-      </label>
-      <label className="flex cursor-pointer items-center gap-2 text-sm">
-        <input type="checkbox" checked={isRemote} onChange={(e) => setIsRemote(e.target.checked)} />🏠 {dict.session.remote}
-      </label>
-      <Field label={dict.session.note}>
-        <Input value={note} onChange={(e) => setNote(e.target.value)} />
-      </Field>
-      {rangeError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.session.invalidRange}
-        </p>
-      ) : null}
-      {warn ? (
-        <p role="alert" className="text-sm text-accent-dark">
-          {dict.session.overlapWarn}
-        </p>
-      ) : null}
-      <div className="flex gap-2">
-        <Button type="submit" disabled={busy}>
-          {dict.session.save}
-        </Button>
-        <Button type="button" variant="ghost" onClick={onCancel}>
-          {dict.session.cancel}
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-function TaskForm({ initial, onCancel, onSaved }: { initial: Task | null; onCancel: () => void; onSaved: () => Promise<void> }) {
-  const params = useParams<{ date: string }>();
-  const { user } = useAuth();
-  const { dict } = useLang();
-  const [title, setTitle] = useState(initial?.title ?? "");
-  const [description, setDescription] = useState(initial?.description ?? "");
-  const [busy, setBusy] = useState(false);
-
-  const save = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !title.trim()) return;
-    setBusy(true);
-    try {
-      if (initial) {
-        await updateTask(initial.id, user.id, { title: title.trim(), description: description.trim() || undefined });
-      } else {
-        await createTask({ userId: user.id, date: params.date, title: title.trim(), description: description.trim() || undefined });
-      }
-      await onSaved();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form onSubmit={save} className="mb-3 space-y-2 rounded-xl border border-border bg-card p-3 backdrop-blur-md">
-      <Field label={dict.task.title}>
-        <Input required value={title} placeholder={dict.task.placeholderTitle} onChange={(e) => setTitle(e.target.value)} />
-      </Field>
-      <Field label={dict.task.description}>
-        <TextArea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-      </Field>
-      <div className="flex gap-2">
-        <Button type="submit" disabled={busy || !title.trim()}>
-          {dict.task.save}
-        </Button>
-        <Button type="button" variant="ghost" onClick={onCancel}>
-          {dict.task.cancel}
-        </Button>
-      </div>
-    </form>
   );
 }

@@ -4,10 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { FileDown, FileSpreadsheet, X } from "lucide-react";
 import { listSessions, listTasks } from "@/lib/backend";
-import { daysInMonth, formatMinutes } from "@/lib/dates";
+import { daysInMonth, formatMinutes, formatNumber } from "@/lib/dates";
 import type { MonthDayRow } from "@/lib/types";
-import { exportManyExcel, exportManyPdf, monthLabel, monthTotals } from "@/lib/report";
+import { calendarMonthLabel, EXPORT_FIELDS, exportManyExcel, exportManyPdf, monthTotals } from "@/lib/report";
+import type { ExportField } from "@/lib/report";
+import { jalaaliMonthLength, toGregorianKey, toJalaali } from "@/lib/jalali";
 import type { Dict } from "@/lib/i18n/en";
+import { ExportFieldPicker } from "./ExportFieldPicker";
 import { Button } from "./ui";
 
 interface MonthInfo {
@@ -26,6 +29,7 @@ export function ExportModal({
   email,
   initialYear,
   initialMonth,
+  initialCalendar = "gregorian",
   lang,
   dict,
 }: {
@@ -36,11 +40,13 @@ export function ExportModal({
   email: string;
   initialYear: number;
   initialMonth: number;
+  initialCalendar?: "gregorian" | "jalali";
   lang: "en" | "fa";
   dict: Dict;
 }) {
   const [year, setYear] = useState(initialYear);
   const [selected, setSelected] = useState<number[]>([initialMonth]);
+  const [fields, setFields] = useState<ExportField[]>(EXPORT_FIELDS);
   const [infos, setInfos] = useState<MonthInfo[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -55,10 +61,12 @@ export function ExportModal({
   // Reset to the current context each time the modal opens.
   useEffect(() => {
     if (open) {
-      setYear(initialYear);
-      setSelected([initialMonth]);
+      const initialJalali = lang === "fa" && initialCalendar === "gregorian" ? toJalaali(initialYear, initialMonth, 15) : null;
+      setYear(initialJalali?.jy ?? initialYear);
+      setSelected([initialJalali?.jm ?? initialMonth]);
+      setFields(EXPORT_FIELDS);
     }
-  }, [open, initialYear, initialMonth]);
+  }, [open, initialYear, initialMonth, initialCalendar, lang]);
 
   // Close on Escape + lock background scroll while open.
   useEffect(() => {
@@ -80,13 +88,18 @@ export function ExportModal({
     if (!open) return;
     setLoaded(false);
     void (async () => {
+      const from = lang === "fa" ? toGregorianKey(year, 1, 1) : `${year}-01-01`;
+      const to = lang === "fa" ? toGregorianKey(year, 12, jalaaliMonthLength(year, 12)) : `${year}-12-31`;
       const [sessions, tasks] = await Promise.all([
-        listSessions(userId, `${year}-01-01`, `${year}-12-31`),
-        listTasks(userId, `${year}-01-01`, `${year}-12-31`),
+        listSessions(userId, from, to),
+        listTasks(userId, from, to),
       ]);
       const list: MonthInfo[] = [];
       for (let m = 1; m <= 12; m++) {
-        const rows = daysInMonth(year, m).map((date) => {
+        const dateKeys = lang === "fa"
+          ? Array.from({ length: jalaaliMonthLength(year, m) }, (_, i) => toGregorianKey(year, m, i + 1))
+          : daysInMonth(year, m);
+        const rows = dateKeys.map((date) => {
           const ds = sessions.filter((s) => s.date === date);
           const dt = tasks.filter((t) => t.date === date);
           const totalMinutes = ds.reduce(
@@ -102,7 +115,7 @@ export function ExportModal({
       setInfos(list);
       setLoaded(true);
     })();
-  }, [open, userId, year]);
+  }, [open, userId, year, lang]);
 
   const toggle = (m: number) => setSelected((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
   const selectAll = () => setSelected(Array.from({ length: 12 }, (_, i) => i + 1));
@@ -147,11 +160,15 @@ export function ExportModal({
               <button className="cursor-pointer rounded-lg bg-muted px-3 py-1.5 text-sm font-semibold hover:bg-border" onClick={() => setYear((y) => y - 1)} aria-label={dict.report.prev}>
                 {dict.report.prev}
               </button>
-              <span className="min-w-16 text-center text-sm font-bold">{year}</span>
+              <span className="min-w-16 text-center text-sm font-bold">{formatNumber(year, lang)}</span>
               <button className="cursor-pointer rounded-lg bg-muted px-3 py-1.5 text-sm font-semibold hover:bg-border" onClick={() => setYear((y) => y + 1)} aria-label={dict.report.next}>
                 {dict.report.next}
               </button>
             </div>
+          </div>
+
+          <div className="mb-4">
+            <ExportFieldPicker value={fields} onChange={setFields} dict={dict} />
           </div>
 
           <div className="mb-2 flex items-center justify-between">
@@ -179,9 +196,9 @@ export function ExportModal({
                 >
                   <input type="checkbox" checked={selected.includes(info.month)} onChange={() => toggle(info.month)} />
                   <span className="min-w-0">
-                    <span className="block truncate font-semibold">{monthLabel(year, info.month, lang)}</span>
+                    <span className="block truncate font-semibold">{calendarMonthLabel(year, info.month, lang)}</span>
                     <span className="block text-xs text-muted-foreground">
-                      {info.hasData ? `${formatMinutes(info.totalMinutes)} · ${info.daysWorked}` : dict.report.noDataMonth}
+                      {info.hasData ? `${formatMinutes(info.totalMinutes, lang)} · ${formatNumber(info.daysWorked, lang)}` : dict.report.noDataMonth}
                     </span>
                   </span>
                 </label>
@@ -189,14 +206,14 @@ export function ExportModal({
             </div>
           )}
 
-          <p className="mt-2 text-xs text-muted-foreground">{dict.report.exportSelected.replace("{n}", String(selected.length))}</p>
+          <p className="mt-2 text-xs text-muted-foreground">{dict.report.exportSelected.replace("{n}", formatNumber(selected.length, lang))}</p>
 
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
               variant="primary"
               disabled={exportable.length === 0}
               onClick={() => {
-                exportManyPdf({ displayName, email, year, lang }, packs, dict);
+                exportManyPdf({ displayName, email, year, lang, calendar: lang === "fa" ? "jalali" : "gregorian" }, packs, dict, fields);
                 onClose();
               }}
             >
@@ -206,7 +223,7 @@ export function ExportModal({
               variant="secondary"
               disabled={exportable.length === 0}
               onClick={() => {
-                exportManyExcel({ displayName, email, year, lang }, packs, dict);
+                exportManyExcel({ displayName, email, year, lang, calendar: lang === "fa" ? "jalali" : "gregorian" }, packs, dict, fields);
                 onClose();
               }}
             >

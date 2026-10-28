@@ -26,14 +26,35 @@ export function sessionMinutes(s: TimeSession): number {
   return minutesBetween(s.checkInAt, s.checkOutAt);
 }
 
+/** Duration including a still-running session, measured against `now` (epoch ms). */
+export function sessionMinutesAt(s: TimeSession, now: number): number {
+  const end = s.checkOutAt ? new Date(s.checkOutAt).getTime() : now;
+  const ms = end - new Date(s.checkInAt).getTime();
+  return ms > 0 ? Math.round(ms / 60000) : 0;
+}
+
 export function dayTotalMinutes(sessions: TimeSession[]): number {
   return sessions.reduce((acc, s) => acc + sessionMinutes(s), 0);
 }
 
-export function formatMinutes(totalMinutes: number): string {
+/** Day total that keeps counting an open session in real time. */
+export function dayTotalMinutesAt(sessions: TimeSession[], now: number): number {
+  return sessions.reduce((acc, s) => acc + sessionMinutesAt(s, now), 0);
+}
+
+export function formatNumber(value: number, locale: string = "en"): string {
+  return value.toLocaleString(locale === "fa" ? "fa-IR" : "en-US", { useGrouping: false });
+}
+
+export function formatDateKey(dateKey: string, locale: string = "en"): string {
+  if (locale !== "fa") return dateKey;
+  return dateKey.split("-").map((part) => formatNumber(Number(part), locale).padStart(2, "۰")).join("-");
+}
+
+export function formatMinutes(totalMinutes: number, locale: string = "en"): string {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
-  return `${h}:${String(m).padStart(2, "0")}`;
+  return `${formatNumber(h, locale)}:${formatNumber(m, locale).padStart(2, locale === "fa" ? "۰" : "0")}`;
 }
 
 export function formatTime(iso: string, locale: string): string {

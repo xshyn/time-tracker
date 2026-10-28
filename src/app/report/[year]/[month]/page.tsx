@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { FileDown } from "lucide-react";
+import { FileDown, House } from "lucide-react";
 import { useAuth, useRequireAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n/provider";
 import { listSessions, listTasks } from "@/lib/backend";
-import { daysInMonth, formatMinutes } from "@/lib/dates";
+import { daysInMonth, formatMinutes, formatNumber } from "@/lib/dates";
+import { formatJalaliMonth, jalaaliMonthLength, toGregorianKey } from "@/lib/jalali";
 import type { MonthDayRow } from "@/lib/types";
 import { monthTotals } from "@/lib/report";
 import { Button, Card, EmptyState } from "@/components/ui";
@@ -27,7 +28,9 @@ export default function ReportPage() {
 
   const reload = useCallback(async () => {
     if (!authUser) return;
-    const keys = daysInMonth(year, month);
+    const keys = lang === "fa"
+      ? Array.from({ length: jalaaliMonthLength(year, month) }, (_, i) => toGregorianKey(year, month, i + 1))
+      : daysInMonth(year, month);
     const [sessions, tasks] = await Promise.all([
       listSessions(authUser.id, keys[0], keys[keys.length - 1]),
       listTasks(authUser.id, keys[0], keys[keys.length - 1]),
@@ -44,7 +47,7 @@ export default function ReportPage() {
       }),
     );
     setLoaded(true);
-  }, [authUser, year, month]);
+  }, [authUser, year, month, lang]);
 
   useEffect(() => {
     void reload();
@@ -55,14 +58,26 @@ export default function ReportPage() {
   if (loading || !user) return <p className="py-10 text-center text-sm text-muted-foreground">{dict.common.loading}</p>;
 
   const shift = (delta: number) => {
+    if (lang === "fa") {
+      let nextMonth = month + delta;
+      let nextYear = year;
+      if (nextMonth < 1) {
+        nextMonth = 12;
+        nextYear -= 1;
+      } else if (nextMonth > 12) {
+        nextMonth = 1;
+        nextYear += 1;
+      }
+      router.push(`/report/${nextYear}/${String(nextMonth).padStart(2, "0")}`);
+      return;
+    }
     const d = new Date(year, month - 1 + delta, 1);
     router.push(`/report/${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}`);
   };
 
-  const monthLabel = new Date(year, month - 1, 1).toLocaleDateString(lang === "fa" ? "fa-IR" : "en-US", {
-    year: "numeric",
-    month: "long",
-  });
+  const monthLabel = lang === "fa"
+    ? formatJalaliMonth(year, month)
+    : new Date(year, month - 1, 1).toLocaleDateString("en-US", { year: "numeric", month: "long" });
 
   const hasData = rows.some((r) => r.sessions.length > 0 || r.tasks.length > 0);
 
@@ -85,13 +100,14 @@ export default function ReportPage() {
       <Card>
         <div className="flex flex-wrap gap-4 text-sm">
           <span>
-            {dict.report.totalHours}: <strong>{formatMinutes(totals.totalMinutes)}</strong>
+            {dict.report.totalHours}: <strong>{formatMinutes(totals.totalMinutes, lang)}</strong>
           </span>
           <span>
-            {dict.report.daysWorked}: <strong>{totals.daysWorked}</strong>
+            {dict.report.daysWorked}: <strong>{formatNumber(totals.daysWorked, lang)}</strong>
           </span>
-          <span>
-            🏠 {dict.report.remoteDays}: <strong>{totals.remoteDays}</strong>
+          <span className="inline-flex items-center gap-1.5">
+            <House size={14} className="text-primary-light" aria-hidden="true" />
+            {dict.report.remoteDays}: <strong>{formatNumber(totals.remoteDays, lang)}</strong>
           </span>
         </div>
         <div className="no-print mt-3 flex flex-wrap gap-2">
@@ -108,6 +124,7 @@ export default function ReportPage() {
             email={authUser.email}
             initialYear={year}
             initialMonth={month}
+            initialCalendar={lang === "fa" ? "jalali" : "gregorian"}
             lang={lang}
             dict={dict}
           />

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { CalendarDays, Clock3, House, LogOut, Settings as SettingsIcon, TableProperties } from "lucide-react";
+import { CalendarDays, Cloud, Clock3, HardDrive, House, LogOut, Settings as SettingsIcon, TableProperties } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n/provider";
 import { backendKind } from "@/lib/backend";
@@ -68,8 +68,14 @@ export function Sidebar() {
             <ThemeToggle />
           </div>
           {user ? (
-            <p className="mt-2 truncate text-xs text-muted-foreground" title={user.email}>
-              {user.displayName} · {backendKind() === "supabase" ? "☁" : "⌂"}
+            <p className="mt-2 flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground" title={user.email}>
+              <span className="truncate">{user.displayName}</span>
+              <span aria-hidden="true">·</span>
+              {backendKind() === "supabase" ? (
+                <Cloud size={12} className="shrink-0" aria-hidden="true" />
+              ) : (
+                <HardDrive size={12} className="shrink-0" aria-hidden="true" />
+              )}
             </p>
           ) : null}
         </div>

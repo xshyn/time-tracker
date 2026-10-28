@@ -8,7 +8,7 @@ import { LanguageMenu } from "./LanguageMenu";
 import { ThemeToggle } from "./ThemeToggle";
 
 export function Header() {
-  const { dict } = useLang();
+  const { dict, lang } = useLang();
   const { user, signOut } = useAuth();
   const router = useRouter();
 
@@ -27,7 +27,7 @@ export function Header() {
           <span className="hidden min-[400px]:inline">{dict.appName}</span>
         </span>
         <span className="hidden flex-1 text-sm text-muted-foreground lg:block">
-          {new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
+          {new Date().toLocaleDateString(lang === "fa" ? "fa-IR" : "en-US", { weekday: "long", month: "long", day: "numeric" })}
         </span>
         <ThemeToggle />
         <LanguageMenu />

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, House } from "lucide-react";
 import { useRequireAuth, useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n/provider";
 import { listDayRemotes, listSessions, listTasks } from "@/lib/backend";
@@ -163,20 +163,19 @@ export default function CalendarPage() {
                 {cell.key in minutesByDay ? (
                   <span className="mt-0.5 flex items-center gap-1 text-[11px] text-primary-dark">
                     <span aria-hidden="true" className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
-                    {formatMinutes(minutesByDay[cell.key] ?? 0)}
-                    {remoteByDay[cell.key] ? <span aria-hidden="true">🏠</span> : null}
+                    {formatMinutes(minutesByDay[cell.key] ?? 0, lang)}
+                    {remoteByDay[cell.key] ? <House size={11} className="text-primary-light" aria-hidden="true" /> : null}
                   </span>
                 ) : remoteByDay[cell.key] ? (
-                  <span className="mt-0.5 text-[11px]" aria-hidden="true">
-                    🏠
-                  </span>
+                  <House size={12} className="mt-0.5 text-primary-light" aria-hidden="true" />
                 ) : null}
               </Link>
             ),
           )}
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          ● {dict.calendar.worked} · {formatMinutes(Object.values(minutesByDay).reduce((a, b) => a + b, 0))} {dict.calendar.hours}
+        <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
+          {dict.calendar.worked} · {formatMinutes(Object.values(minutesByDay).reduce((a, b) => a + b, 0), lang)} {dict.calendar.hours}
         </p>
       </Card>
     </div>

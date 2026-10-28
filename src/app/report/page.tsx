@@ -2,15 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, FileDown, FileSpreadsheet } from "lucide-react";
+import { ChevronLeft, FileDown, FileSpreadsheet, House } from "lucide-react";
 import { useAuth, useRequireAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n/provider";
 import { listSessions, listTasks } from "@/lib/backend";
-import { daysInMonth, formatMinutes } from "@/lib/dates";
+import { daysInMonth, formatMinutes, formatNumber } from "@/lib/dates";
 import type { MonthDayRow } from "@/lib/types";
-import { exportManyExcel, exportManyPdf, monthLabel, monthTotals } from "@/lib/report";
+import { EXPORT_FIELDS, exportManyExcel, exportManyPdf, monthLabel, monthTotals } from "@/lib/report";
 import { Button, Card, EmptyState } from "@/components/ui";
 import { MonthReportTable } from "@/components/MonthReportTable";
+import type { ExportField } from "@/lib/report";
+import { ExportFieldPicker } from "@/components/ExportFieldPicker";
+import { formatJalaliMonth, jalaaliMonthLength, jalaliToday, toGregorianKey } from "@/lib/jalali";
 
 interface MonthInfo {
   month: number;
@@ -28,20 +31,30 @@ export default function ReportCenterPage() {
   const [year, setYear] = useState(() => new Date().getFullYear());
   const [activeMonth, setActiveMonth] = useState<number | null>(null);
   const [selected, setSelected] = useState<number[]>([]);
+  const [fields, setFields] = useState<ExportField[]>(EXPORT_FIELDS);
   const [infos, setInfos] = useState<MonthInfo[]>([]);
   const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    setYear(lang === "fa" ? jalaliToday().jy : new Date().getFullYear());
+  }, [lang]);
 
   useEffect(() => {
     if (!authUser) return;
     setLoaded(false);
     void (async () => {
+      const from = lang === "fa" ? toGregorianKey(year, 1, 1) : `${year}-01-01`;
+      const to = lang === "fa" ? toGregorianKey(year, 12, jalaaliMonthLength(year, 12)) : `${year}-12-31`;
       const [sessions, tasks] = await Promise.all([
-        listSessions(authUser.id, `${year}-01-01`, `${year}-12-31`),
-        listTasks(authUser.id, `${year}-01-01`, `${year}-12-31`),
+        listSessions(authUser.id, from, to),
+        listTasks(authUser.id, from, to),
       ]);
       const list: MonthInfo[] = [];
       for (let m = 1; m <= 12; m++) {
-        const rows = daysInMonth(year, m).map((date) => {
+        const dateKeys = lang === "fa"
+          ? Array.from({ length: jalaaliMonthLength(year, m) }, (_, i) => toGregorianKey(year, m, i + 1))
+          : daysInMonth(year, m);
+        const rows = dateKeys.map((date) => {
           const ds = sessions.filter((s) => s.date === date);
           const dt = tasks.filter((t) => t.date === date);
           const totalMinutes = ds.reduce(
@@ -64,7 +77,7 @@ export default function ReportCenterPage() {
       setInfos(list);
       setLoaded(true);
     })();
-  }, [authUser, year]);
+  }, [authUser, year, lang]);
 
   const toggle = (m: number) => setSelected((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
   const selectAll = () => setSelected(Array.from({ length: 12 }, (_, i) => i + 1));
@@ -72,6 +85,8 @@ export default function ReportCenterPage() {
     setActiveMonth(m);
     setSelected([m]);
   };
+  const getMonthLabel = (calendarYear: number, month: number) =>
+    lang === "fa" ? formatJalaliMonth(calendarYear, month) : monthLabel(calendarYear, month, lang);
 
   const packs = useMemo(
     () =>
@@ -97,11 +112,11 @@ export default function ReportCenterPage() {
 
   const doExcel = () => {
     if (!authUser || exportable.length === 0) return;
-    exportManyExcel({ displayName: authUser.displayName, email: authUser.email, year, lang }, packs, dict);
+    exportManyExcel({ displayName: authUser.displayName, email: authUser.email, year, lang, calendar: lang === "fa" ? "jalali" : "gregorian" }, packs, dict, fields);
   };
   const doPdf = () => {
     if (!authUser || exportable.length === 0) return;
-    exportManyPdf({ displayName: authUser.displayName, email: authUser.email, year, lang }, packs, dict);
+    exportManyPdf({ displayName: authUser.displayName, email: authUser.email, year, lang, calendar: lang === "fa" ? "jalali" : "gregorian" }, packs, dict, fields);
   };
   const exportButtons = (
     <div className="no-print mt-3 flex flex-wrap gap-2">
@@ -128,7 +143,7 @@ export default function ReportCenterPage() {
               {dir === "rtl" ? <ChevronLeft size={16} aria-hidden="true" className="rotate-180" /> : <ChevronLeft size={16} aria-hidden="true" />}
               {dict.report.allMonths}
             </button>
-            <h1 className="text-xl font-bold">{monthLabel(year, activeMonth, lang)}</h1>
+            <h1 className="text-xl font-bold">{getMonthLabel(year, activeMonth)}</h1>
           </div>
           <Link href={`/report/${year}/${mm}`} className="text-sm font-semibold text-primary-light hover:underline">
             {dict.report.openFullPage}
@@ -138,14 +153,18 @@ export default function ReportCenterPage() {
         <Card>
           <div className="flex flex-wrap gap-4 text-sm">
             <span>
-              {dict.report.totalHours}: <strong>{formatMinutes(active.totalMinutes)}</strong>
+              {dict.report.totalHours}: <strong>{formatMinutes(active.totalMinutes, lang)}</strong>
             </span>
             <span>
-              {dict.report.daysWorked}: <strong>{active.daysWorked}</strong>
+              {dict.report.daysWorked}: <strong>{formatNumber(active.daysWorked, lang)}</strong>
             </span>
-            <span>
-              🏠 {dict.report.remoteDays}: <strong>{active.remoteDays}</strong>
+            <span className="inline-flex items-center gap-1.5">
+              <House size={14} className="text-primary-light" aria-hidden="true" />
+              {dict.report.remoteDays}: <strong>{formatNumber(active.remoteDays, lang)}</strong>
             </span>
+          </div>
+          <div className="no-print mt-4">
+            <ExportFieldPicker value={fields} onChange={setFields} dict={dict} />
           </div>
           {exportButtons}
           <p className="no-print mt-2 text-xs text-muted-foreground">{dict.report.printHint}</p>
@@ -173,7 +192,7 @@ export default function ReportCenterPage() {
           <button className="cursor-pointer rounded-lg bg-muted px-3 py-1.5 text-sm font-semibold hover:bg-border" onClick={() => setYear((y) => y - 1)} aria-label={dict.report.prev}>
             {dict.report.prev}
           </button>
-          <span className="min-w-16 text-center text-sm font-bold">{year}</span>
+          <span className="min-w-16 text-center text-sm font-bold">{formatNumber(year, lang)}</span>
           <button className="cursor-pointer rounded-lg bg-muted px-3 py-1.5 text-sm font-semibold hover:bg-border" onClick={() => setYear((y) => y + 1)} aria-label={dict.report.next}>
             {dict.report.next}
           </button>
@@ -183,14 +202,18 @@ export default function ReportCenterPage() {
       <Card>
         <div className="flex flex-wrap gap-4 text-sm">
           <span>
-            {dict.report.totalHours}: <strong>{formatMinutes(yearTotals.totalMinutes)}</strong>
+            {dict.report.totalHours}: <strong>{formatMinutes(yearTotals.totalMinutes, lang)}</strong>
           </span>
           <span>
-            {dict.report.daysWorked}: <strong>{yearTotals.daysWorked}</strong>
+            {dict.report.daysWorked}: <strong>{formatNumber(yearTotals.daysWorked, lang)}</strong>
           </span>
-          <span>
-            🏠 {dict.report.remoteDays}: <strong>{yearTotals.remoteDays}</strong>
+          <span className="inline-flex items-center gap-1.5">
+            <House size={14} className="text-primary-light" aria-hidden="true" />
+            {dict.report.remoteDays}: <strong>{formatNumber(yearTotals.remoteDays, lang)}</strong>
           </span>
+        </div>
+        <div className="no-print mt-4">
+          <ExportFieldPicker value={fields} onChange={setFields} dict={dict} />
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
           <button className="cursor-pointer font-semibold text-primary-light hover:underline" onClick={selectAll}>
@@ -199,7 +222,7 @@ export default function ReportCenterPage() {
           <button className="cursor-pointer font-semibold text-primary-light hover:underline" onClick={() => setSelected([])}>
             {dict.report.exportClear}
           </button>
-          <span className="text-muted-foreground">{dict.report.exportSelected.replace("{n}", String(selected.length))}</span>
+          <span className="text-muted-foreground">{dict.report.exportSelected.replace("{n}", formatNumber(selected.length, lang))}</span>
         </div>
         {exportButtons}
         <p className="no-print mt-2 text-xs text-muted-foreground">{dict.report.pickMonth}</p>
@@ -220,13 +243,18 @@ export default function ReportCenterPage() {
                 selected.includes(info.month) ? "border-primary-light bg-pine" : "border-border bg-card/70"
               } ${info.hasData ? "" : "opacity-60"}`}
             >
-              <button className="block w-full cursor-pointer text-start" onClick={() => openMonth(info.month)} aria-label={monthLabel(year, info.month, lang)}>
-                <span className="block truncate font-bold">{monthLabel(year, info.month, lang)}</span>
+              <button className="block w-full cursor-pointer text-start" onClick={() => openMonth(info.month)} aria-label={getMonthLabel(year, info.month)}>
+                <span className="block truncate font-bold">{getMonthLabel(year, info.month)}</span>
                 <span className="mt-1 block text-sm">
                   {info.hasData ? (
                     <>
-                      <strong>{formatMinutes(info.totalMinutes)}</strong> <span className="text-muted-foreground">· {info.daysWorked} {dict.report.daysWorked}</span>
-                      {info.remoteDays > 0 ? <span className="ms-1">🏠{info.remoteDays}</span> : null}
+                      <strong>{formatMinutes(info.totalMinutes, lang)}</strong> <span className="text-muted-foreground">· {formatNumber(info.daysWorked, lang)} {dict.report.daysWorked}</span>
+                      {info.remoteDays > 0 ? (
+                        <span className="ms-1 inline-flex items-center gap-0.5">
+                          <House size={11} className="text-primary-light" aria-hidden="true" />
+                          {formatNumber(info.remoteDays, lang)}
+                        </span>
+                      ) : null}
                     </>
                   ) : (
                     <span className="text-muted-foreground">{dict.report.noDataMonth}</span>

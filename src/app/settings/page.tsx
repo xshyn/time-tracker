@@ -7,6 +7,7 @@ import { useLang } from "@/lib/i18n/provider";
 import { useTheme, type Theme } from "@/lib/theme";
 import { backendKind, migrateLocalToCloud, readLocalBackup, updateProfile, type LocalBackup } from "@/lib/backend";
 import { Button, Card, Field, Input, Separator } from "@/components/ui";
+import { formatNumber } from "@/lib/dates";
 import { LanguageMenu } from "@/components/LanguageMenu";
 import { ArrowRight, Check, Monitor, Moon, Sun } from "lucide-react";
 
@@ -128,8 +129,8 @@ export default function SettingsPage() {
           ) : (
             <p className="text-sm font-medium">
               {dict.settings.syncFound
-                .replace("{tasks}", String(backup.tasks.length))
-                .replace("{sessions}", String(backup.sessions.length))}
+                .replace("{tasks}", formatNumber(backup.tasks.length, lang))
+                .replace("{sessions}", formatNumber(backup.sessions.length, lang))}
             </p>
           )}
         </div>
